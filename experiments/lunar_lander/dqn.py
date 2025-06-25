@@ -22,10 +22,10 @@ def run(argvs=sys.argv[1:]):
         sampling_distribution=UniformSamplingDistribution(p["seed"]),
         batch_size=p["batch_size"],
         max_capacity=p["replay_buffer_capacity"],
+        observation_shape=(env.observation_shape[0],),
         stack_size=1,
         update_horizon=p["update_horizon"],
         gamma=p["gamma"],
-        compress=True,
     )
     agent = DQN(
         q_key,

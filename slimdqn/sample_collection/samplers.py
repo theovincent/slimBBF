@@ -6,7 +6,6 @@ import numpy.typing as npt
 
 import jax
 
-from slimdqn.sample_collection import ReplayItemID
 from slimdqn.sample_collection import sum_tree
 
 
@@ -16,15 +15,14 @@ class UniformSamplingDistribution:
     def __init__(self, seed: int) -> None:
         self._rng_key = np.random.default_rng(seed)
 
-    def add(self, key: ReplayItemID):
+    def add(self, key):
         pass
 
-    def remove(self, key: ReplayItemID):
+    def remove(self, key):
         pass
 
     def sample(self, index_min, index_max):
-        index = self._rng_key.integers(index_min, index_max, size=1)
-        return index
+        return int(self._rng_key.integers(index_min, index_max, size=1)[0])
 
 
 class PrioritizedSamplingDistribution(UniformSamplingDistribution):
@@ -41,7 +39,7 @@ class PrioritizedSamplingDistribution(UniformSamplingDistribution):
         self._sum_tree = sum_tree.SumTree(self._max_capacity)
         super().__init__(seed=seed)
 
-    def add(self, key: ReplayItemID, priority: float) -> None:
+    def add(self, key, priority: float) -> None:
         super().add(key)
         if priority is None:
             priority = 0.0
@@ -50,11 +48,7 @@ class PrioritizedSamplingDistribution(UniformSamplingDistribution):
             0.0 if priority == 0.0 else priority**self._priority_exponent,
         )
 
-    def update(
-        self,
-        keys: "npt.NDArray[ReplayItemID] | ReplayItemID",
-        priorities: "npt.NDArray[np.float64] | float",
-    ) -> None:
+    def update(self, keys, priorities) -> None:
         if not isinstance(keys, np.ndarray):
             keys = np.asarray([keys], dtype=np.int32)
 
@@ -64,7 +58,7 @@ class PrioritizedSamplingDistribution(UniformSamplingDistribution):
             priorities,
         )
 
-    def remove(self, key: ReplayItemID) -> None:
+    def remove(self, key) -> None:
         index = self._key_to_index[key]
         last_index = len(self._index_to_key) - 1
         if index == last_index:
