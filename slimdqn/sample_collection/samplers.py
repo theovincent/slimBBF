@@ -16,37 +16,15 @@ class UniformSamplingDistribution:
     def __init__(self, seed: int) -> None:
         self._rng_key = np.random.default_rng(seed)
 
-        self._key_to_index = {}
-        self._index_to_key = []
+    def add(self, key: ReplayItemID):
+        pass
 
-    def add(self, key: ReplayItemID) -> None:
-        self._key_to_index[key] = len(self._index_to_key)
-        self._index_to_key.append(key)
+    def remove(self, key: ReplayItemID):
+        pass
 
-    def remove(self, key: ReplayItemID) -> None:
-        assert key in self._key_to_index, ValueError(f"Key {key} not found.")
-
-        index = self._key_to_index[key]
-
-        # for efficient O(1) pop on the keys
-        self._index_to_key[index], self._index_to_key[-1] = (
-            self._index_to_key[-1],
-            self._index_to_key[index],
-        )
-        self._key_to_index[self._index_to_key[index]] = index
-        self._key_to_index.pop(self._index_to_key.pop())
-
-    def sample(self, size: int):
-
-        assert self._index_to_key, ValueError("No keys to sample from.")
-
-        indices = self._rng_key.integers(len(self._index_to_key), size=size)
-
-        return np.fromiter(
-            (self._index_to_key[index] for index in indices),
-            dtype=np.int32,
-            count=size,
-        )
+    def sample(self, index_min, index_max):
+        index = self._rng_key.integers(index_min, index_max, size=1)
+        return index
 
 
 class PrioritizedSamplingDistribution(UniformSamplingDistribution):
