@@ -1,10 +1,9 @@
 # Inspired by dopamine implementation: https://github.com/google/dopamine/blob/master/dopamine/jax/replay_memory/replay_buffer.py
 """Simpler implementation of the standard DQN replay memory."""
-import collections
-import operator
-
 import jax
 import numpy as np
+
+from flax import struct
 
 from slimdqn.sample_collection.samplers import UniformSamplingDistribution, PrioritizedSamplingDistribution
 
@@ -14,35 +13,25 @@ def mod(x: int, N: int):
 
 
 def index_range(a: int, b: int, N: int):
-    a = a % N
-    b = b % N
+    a = mod(a, N)
+    b = mod(b, N)
     if a <= b:
         return np.arange(a, b + 1)
-    import pdb
 
-    pdb.set_trace()
     return np.concat([np.arange(a, N), np.arange(b + 1)])
 
 
 def compute_first_true_index(array, indices):
     all_indices = np.where(array[indices] > 0)[0]
-    return all_indices[0] if len(all_indices) > 0 else indices[-1] + 1
+    return indices[all_indices[0]] if len(all_indices) > 0 else indices[-1] + 1
 
 
-class ReplayElement:
-    def __init__(self, batch_size, state_shape):
-        self.state = np.zeros((batch_size,) + state_shape, dtype=np.float32)
-        self.action = np.zeros((batch_size,), dtype=np.int32)
-        self.reward = np.zeros((batch_size,), dtype=np.float32)
-        self.next_state = np.zeros((batch_size,) + state_shape, dtype=np.float32)
-        self.is_terminal = np.zeros((batch_size,), dtype=np.int8)
-
-    def update(self, index, state, action, reward, next_state, is_terminal):
-        self.state[index] = state
-        self.action[index] = action
-        self.reward[index] = reward
-        self.next_state[index] = next_state
-        self.is_terminal[index] = is_terminal
+class ReplayElement(struct.PyTreeNode):
+    state: np.ndarray[np.float64]
+    action: int
+    reward: float
+    next_state: np.ndarray[np.float64]
+    is_terminal: bool
 
 
 class ReplayBuffer:
@@ -72,51 +61,53 @@ class ReplayBuffer:
         self._batch_size = batch_size
 
         self._stack_size = stack_size
-        self._highest_update_horizon = update_horizon  # set to highest that will be used in sampling
+        self._highest_update_horizon = update_horizon
         self._gamma = gamma
-        self._gamma_multipliers = np.power(gamma, np.arange(update_horizon))
         self._clipping = clipping
         self._max_sample_trials = max_sample_trials
+
+        self._last_is_truncation = False
 
     def add(self, observation, action, reward, is_terminal, is_truncation) -> None:
         self._observation_stack[mod(self.add_count, self._max_capacity)] = observation
         self._action_stack[mod(self.add_count, self._max_capacity)] = action
         self._reward_stack[mod(self.add_count, self._max_capacity)] = reward
         self._is_terminal_stack[mod(self.add_count, self._max_capacity)] = is_terminal
-        self._is_truncation_stack[mod(self.add_count, self._max_capacity)] = is_truncation
+        self._is_truncation_stack[mod(self.add_count, self._max_capacity)] = True
+        if self.add_count > 0:
+            self._is_truncation_stack[mod(self.add_count - 1, self._max_capacity)] = self._last_is_truncation
+        self._last_is_truncation = is_truncation
         # THINK Prioritized RB add here --> how does it change?
         self.add_count += 1
 
-    def sample(self, size=None, n=None):
+    def sample(self, size=None, n=None, gamma=None):
         if size is None:
             size = self._batch_size
         if n is None:
             n = self._highest_update_horizon
+        if gamma is None:
+            gamma = self._gamma
 
         n_sample_trials = 0
-        n_added_replay_elements = 0
-        batch = ReplayElement(size, self._observation_shape + (self._stack_size,))
-        while n_added_replay_elements < size and n_sample_trials < self._max_sample_trials:
+        batch = []
+        while len(batch) < size and n_sample_trials < self._max_sample_trials:
             index = self._sampling_distribution.sample(0, min(self.add_count - 1, self._max_capacity - 1))
-            is_valid, sample = self._check_valid(index, n)
+            is_valid, sample = self._check_valid(index, n, gamma)
             if is_valid:
                 state, action, reward, next_state, is_terminal = sample
-                batch.update(index, state, action, reward, next_state, is_terminal)
-                n_added_replay_elements += 1
+                batch.append(ReplayElement(state, action, reward, next_state, is_terminal))
             n_sample_trials += 1
-        assert n_added_replay_elements == size, "Could not construct a valid batch"
-        return batch
+        assert len(batch) == size, "Could not construct a valid batch"
+        return jax.tree_util.tree_map(lambda *xs: np.stack(xs), *batch)
 
     def update(self, keys, **kwargs):
         self._sampling_distribution.update(keys, **kwargs)
 
-    def _check_valid(self, index, n):
-        is_state_invalid = np.any(
-            self._is_terminal_stack[index_range(index - self._stack_size + 1, index - 1, self._max_capacity)]
-        ) or np.any(self._is_truncation_stack[index_range(index - self._stack_size + 1, index, self._max_capacity)])
-        import pdb
-
-        pdb.set_trace()
+    def _check_valid(self, index, n, gamma):
+        is_state_invalid = self._stack_size > 1 and (
+            np.any(self._is_terminal_stack[index_range(index - self._stack_size + 1, index - 1, self._max_capacity)])
+            or np.any(self._is_truncation_stack[index_range(index - self._stack_size + 1, index, self._max_capacity)])
+        )
 
         first_terminal_index = mod(
             compute_first_true_index(self._is_terminal_stack, index_range(index, index + n - 1, self._max_capacity)),
@@ -127,21 +118,26 @@ class ReplayBuffer:
             self._max_capacity,
         )
         is_next_state_valid = first_terminal_index <= first_truncation_index
-        import pdb
-
-        pdb.set_trace()
 
         if not is_state_invalid and is_next_state_valid:
-            return True, self._construct_batch_sample(index, first_terminal_index, n)
+            return True, self._construct_batch_sample(index, first_terminal_index, n, gamma)
         return False, None
 
-    def _construct_batch_sample(self, index, first_terminal_index, n):
-        state = self._observation_stack[index_range(index - self._stack_size + 1, index, self._max_capacity)]
+    def _construct_batch_sample(self, index, first_terminal_index, n, gamma):
+
+        state = self._observation_stack[index_range(index - self._stack_size + 1, index, self._max_capacity)].transpose(
+            np.append(np.arange(1, len(self._observation_shape) + 1), 0)
+        )
         action = self._action_stack[index]
-        reward = self._reward_stack[index_range(index, first_terminal_index, self._max_capacity)]
-        reward = reward * self._gamma_multipliers[: len(reward)]
+        is_terminal = first_terminal_index != mod(index + n, self._max_capacity)
+        reward = self._reward_stack[
+            index_range(index, first_terminal_index if is_terminal else first_terminal_index - 1, self._max_capacity)
+        ]
+        assert len(reward) == 1
+
+        reward = np.dot(reward, np.power(gamma, np.arange(len(reward))))
         next_state = self._observation_stack[
             index_range(index + n - self._stack_size + 1, index + n, self._max_capacity)
-        ]
-        is_terminal = first_terminal_index != mod(index + n, self._max_capacity)
+        ].transpose(np.append(np.arange(1, len(self._observation_shape) + 1), 0))
+
         return (state, action, reward, next_state, is_terminal)

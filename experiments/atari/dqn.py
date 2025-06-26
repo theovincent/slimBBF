@@ -26,8 +26,8 @@ def run(argvs=sys.argv[1:]):
         update_horizon=p["update_horizon"],
         gamma=p["gamma"],
         clipping=lambda x: np.clip(x, -1, 1),
+        observation_shape=(env.state_height, env.state_width),
         stack_size=4,
-        compress=True,
     )
     agent = DQN(
         q_key,
