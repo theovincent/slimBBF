@@ -69,16 +69,39 @@ class ReplayBuffer:
         self._last_is_truncation = False
 
     def add(self, observation, action, reward, is_terminal, is_truncation) -> None:
+        if self.add_count == 0:
+            self._observation_stack[
+                index_range(self.add_count, self.add_count + self._stack_size - 1, self._max_capacity)
+            ] = 0
+            self._is_terminal_stack[
+                index_range(self.add_count, self.add_count + self._stack_size - 1, self._max_capacity)
+            ] = 0
+            self._is_truncation_stack[
+                index_range(self.add_count, self.add_count + self._stack_size - 1, self._max_capacity)
+            ] = 0
+            self.add_count += self._stack_size - 1
+
         self._observation_stack[mod(self.add_count, self._max_capacity)] = observation
         self._action_stack[mod(self.add_count, self._max_capacity)] = action
         self._reward_stack[mod(self.add_count, self._max_capacity)] = reward
         self._is_terminal_stack[mod(self.add_count, self._max_capacity)] = is_terminal
         self._is_truncation_stack[mod(self.add_count, self._max_capacity)] = True
-        if self.add_count > 0:
+        if self.add_count >= self._stack_size:
             self._is_truncation_stack[mod(self.add_count - 1, self._max_capacity)] = self._last_is_truncation
         self._last_is_truncation = is_truncation
         # THINK Prioritized RB add here --> how does it change?
         self.add_count += 1
+        if is_terminal or is_truncation:
+            self._observation_stack[
+                index_range(self.add_count, self.add_count + self._stack_size - 1, self._max_capacity)
+            ] = 0
+            self._is_terminal_stack[
+                index_range(self.add_count, self.add_count + self._stack_size - 1, self._max_capacity)
+            ] = 0
+            self._is_truncation_stack[
+                index_range(self.add_count, self.add_count + self._stack_size - 1, self._max_capacity)
+            ] = 0
+            self.add_count += self._stack_size - 1
 
     def sample(self, batch_size=None, n=None, gamma=None):
         if batch_size is None:
@@ -136,7 +159,6 @@ class ReplayBuffer:
         reward = self._reward_stack[
             index_range(index, first_terminal_index if is_terminal else first_terminal_index - 1, self._max_capacity)
         ]
-        assert len(reward) == 1
 
         reward = np.dot(reward, np.power(gamma, np.arange(len(reward))))
         next_state = self._observation_stack[
