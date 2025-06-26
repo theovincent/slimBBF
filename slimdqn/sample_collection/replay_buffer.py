@@ -80,24 +80,27 @@ class ReplayBuffer:
         # THINK Prioritized RB add here --> how does it change?
         self.add_count += 1
 
-    def sample(self, size=None, n=None, gamma=None):
-        if size is None:
-            size = self._batch_size
+    def sample(self, batch_size=None, n=None, gamma=None):
+        if batch_size is None:
+            batch_size = self._batch_size
         if n is None:
             n = self._highest_update_horizon
         if gamma is None:
             gamma = self._gamma
 
-        n_sample_trials = 0
         batch = []
-        while len(batch) < size and n_sample_trials < self._max_sample_trials:
-            index = self._sampling_distribution.sample(0, min(self.add_count - 1, self._max_capacity - 1))
+        indices = self._sampling_distribution.sample(0, min(self.add_count - 1, self._max_capacity - 1), batch_size)
+        for index in indices:
+            n_sample_trials = 0
             is_valid, sample = self._check_valid(index, n, gamma)
-            if is_valid:
-                state, action, reward, next_state, is_terminal = sample
-                batch.append(ReplayElement(state, action, reward, next_state, is_terminal))
-            n_sample_trials += 1
-        assert len(batch) == size, "Could not construct a valid batch"
+            while (not is_valid) and n_sample_trials < self._max_sample_trials:
+                index = self._sampling_distribution.sample(0, min(self.add_count - 1, self._max_capacity - 1), 1)[0]
+                n_sample_trials += 1
+                is_valid, sample = self._check_valid(index, n, gamma)
+
+            assert is_valid, "Could not construct a valid batch"
+            state, action, reward, next_state, is_terminal = sample
+            batch.append(ReplayElement(state, action, reward, next_state, is_terminal))
         return jax.tree_util.tree_map(lambda *xs: np.stack(xs), *batch)
 
     def update(self, keys, **kwargs):

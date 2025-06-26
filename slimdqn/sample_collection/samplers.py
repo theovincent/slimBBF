@@ -21,8 +21,8 @@ class UniformSamplingDistribution:
     def remove(self, key):
         pass
 
-    def sample(self, index_min, index_max):
-        return int(self._rng_key.integers(index_min, index_max, size=1)[0])
+    def sample(self, index_min, index_max, n_samples):
+        return self._rng_key.integers(index_min, index_max, size=n_samples)
 
 
 class PrioritizedSamplingDistribution(UniformSamplingDistribution):
