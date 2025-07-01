@@ -2,14 +2,14 @@
 
 """A sum tree data structure that uses JAX for controlling randomness."""
 
-import functools
+from functools import partial
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
 
-@functools.partial(jax.jit, backend="cpu")
+@partial(jax.jit)
 def step(i, args):
     query_value, index, nodes = args
     left_child = index * 2 + 1
@@ -19,9 +19,9 @@ def step(i, args):
     return query_value, index, nodes
 
 
-@functools.partial(jax.jit, backend="cpu")
-@functools.partial(jax.vmap, in_axes=(None, None, 0, None, None))
-def parallel_stratified_sample(rng, nodes, i, n, depth):
+@partial(jax.jit)
+@partial(jax.vmap, in_axes=(None, None, 0, None, None))
+def parallel_sample(rng, nodes, i, n, depth):
     rng = jax.random.fold_in(rng, i)
     total_priority = nodes[0]
     upper_bound = (i + 1) / n
@@ -31,56 +31,44 @@ def parallel_stratified_sample(rng, nodes, i, n, depth):
     return index
 
 
-class DeterministicSumTree:
+class SumTree:
     """A sum tree data structure for storing replay priorities."""
 
     def __init__(self, capacity):
         assert capacity > 0, "Give non-negative capacity"
-        self.nodes = []
-        self.depth = int(np.ceil(np.log2(capacity)))
-        self.low_idx = (2**self.depth) - 1  # node_idx + low_idx -> tree_idx
-        self.high_idx = capacity + self.low_idx
+        self.depth = int(jnp.ceil(jnp.log2(capacity)))
         self.nodes = np.zeros(2 ** (self.depth + 1) - 1)
-        self.capacity = capacity
+        self._first_leaf_offset = (2**self.depth) - 1  # node_idx + low_idx -> tree_idx
 
-        self.highest_set = 0
-
+        self.highest_index_set = 0
         self.max_recorded_priority = 1.0
 
-    def _total_priority(self):
-        """Returns the sum of all priorities stored in this sum tree."""
-        return self.nodes[0]
-
     def query(self, query_value):
-        """Samples an element from the sum tree based on query."""
-        assert self._total_priority() > 0, "Can't query empty tree"
+        """Query an element from the sum tree."""
         nodes = jnp.array(self.nodes)
-        query_value *= self._total_priority()
-
+        query_value *= self.nodes[0]
         _, index, _ = jax.lax.fori_loop(0, self.depth, step, (query_value, 0, nodes))
+        return np.minimum(index - self._first_leaf_offset, self.highest_index_set)
 
-        return np.minimum(index - self.low_idx, self.highest_set)
-
-    def stratified_sample(self, batch_size, rng):
+    def sample(self, batch_size, rng):
         """Performs stratified sampling using the sum tree."""
-        assert self._total_priority() > 0.0, "Cannot sample from an empty sum tree."
-        indices = parallel_stratified_sample(rng, self.nodes, np.arange(batch_size), batch_size, self.depth)
-        return np.minimum(indices - self.low_idx, self.highest_set)
+        assert self.nodes[0] > 0, "Cannot sample from an empty sum tree."
+        indices = parallel_sample(rng, self.nodes, jnp.arange(batch_size), batch_size, self.depth)
+        return jnp.minimum(indices - self._first_leaf_offset, self.highest_index_set)
 
     def get(self, node_index):
         """Returns the value of the leaf node corresponding to the index."""
-        return self.nodes[node_index + self.low_idx]
+        return self.nodes[node_index + self._first_leaf_offset]
 
     def reset_priorities(self):
-        # CHECK
-        for i in range(self.highest_set):
+        for i in range(self.highest_index_set):
             self.set(i, self.max_recorded_priority)
 
     def set(self, node_index, value):
         """Sets the value of a leaf node and updates internal nodes accordingly."""
-        assert value >= 0.0, "Sum tree values should be nonnegative. Got {}".format(value)
-        self.highest_set = max(node_index, self.highest_set)
-        node_index = node_index + self.low_idx
+        assert value >= 0, "Sum tree values should be nonnegative. Got {}".format(value)
+        self.highest_index_set = max(node_index, self.highest_index_set)
+        node_index = node_index + self._first_leaf_offset
         self.max_recorded_priority = max(value, self.max_recorded_priority)
 
         delta_value = value - self.nodes[node_index]
