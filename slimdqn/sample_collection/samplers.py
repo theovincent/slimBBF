@@ -15,14 +15,14 @@ class UniformSamplingDistribution:
     def __init__(self, seed: int) -> None:
         self._rng_key = np.random.default_rng(seed)
 
-    def add(self, key):
+    def add(self, index):
         pass
 
-    def remove(self, key):
+    def remove(self, index):
         pass
 
     def sample(self, index_min, index_max, n_samples):
-        return self._rng_key.integers(index_min, index_max, size=n_samples)
+        return self._rng_key.integers(index_min, index_max, size=n_samples, endpoint=True)
 
 
 class PrioritizedSamplingDistribution(UniformSamplingDistribution):
