@@ -9,7 +9,7 @@ from slimdqn.networks.architectures.dqn import DQNNet
 from slimdqn.sample_collection.replay_buffer import ReplayBuffer, ReplayElement
 
 
-class DQN:
+class PER:
     def __init__(
         self,
         key: jax.random.PRNGKey,
@@ -39,11 +39,12 @@ class DQN:
 
     def update_online_params(self, step: int, replay_buffer: ReplayBuffer):
         if step % self.update_to_data == 0:
-            batch_samples, _ = replay_buffer.sample()
-
-            self.params, self.optimizer_state, loss = self.learn_on_batch(
-                self.params, self.target_params, self.optimizer_state, batch_samples
+            batch_samples, metadata = replay_buffer.sample()
+            self.params, self.optimizer_state, loss, per_sample_loss = self.learn_on_batch(
+                self.params, self.target_params, self.optimizer_state, batch_samples, metadata["probabilities"]
             )
+            metadata.update({"loss": jnp.sqrt(per_sample_loss)})
+            replay_buffer.update(metadata)
             self.cumulated_loss += loss
 
     def update_target_params(self, step: int):
@@ -52,26 +53,26 @@ class DQN:
 
             logs = {"loss": self.cumulated_loss / (self.target_update_frequency / self.update_to_data)}
             self.cumulated_loss = 0
-
             return True, logs
         return False, {}
 
     @partial(jax.jit, static_argnames="self")
     def learn_on_batch(
-        self,
-        params: FrozenDict,
-        params_target: FrozenDict,
-        optimizer_state,
-        batch_samples,
+        self, params: FrozenDict, params_target: FrozenDict, optimizer_state, batch_samples, batch_probabilities
     ):
-        loss, grad_loss = jax.value_and_grad(self.loss_on_batch)(params, params_target, batch_samples)
+        (loss, per_sample_loss), grad_loss = jax.value_and_grad(self.loss_on_batch, has_aux=True)(
+            params, params_target, batch_samples, batch_probabilities
+        )
         updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state)
         params = optax.apply_updates(params, updates)
 
-        return params, optimizer_state, loss
+        return params, optimizer_state, loss, per_sample_loss
 
-    def loss_on_batch(self, params: FrozenDict, params_target: FrozenDict, samples):
-        return jax.vmap(self.loss, in_axes=(None, None, 0))(params, params_target, samples).mean()
+    def loss_on_batch(self, params: FrozenDict, params_target: FrozenDict, samples, batch_probabilities):
+        per_sample_loss = jax.vmap(self.loss, in_axes=(None, None, 0))(params, params_target, samples)
+        loss_weights = 1.0 / jnp.sqrt(batch_probabilities + 1e-10)  # sqrt because beta is fixed to 0.5 in PER
+        loss_weights /= jnp.max(loss_weights)
+        return (loss_weights * per_sample_loss).mean(), per_sample_loss
 
     def loss(self, params: FrozenDict, params_target: FrozenDict, sample: ReplayElement):
         # computes the loss for a single sample

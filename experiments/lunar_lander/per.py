@@ -7,9 +7,9 @@ import numpy as np
 from experiments.base.dqn import train
 from experiments.base.utils import prepare_logs
 from slimdqn.environments.lunar_lander import LunarLander
-from slimdqn.networks.dqn import DQN
+from slimdqn.networks.per import PER
 from slimdqn.sample_collection.replay_buffer import ReplayBuffer
-from slimdqn.sample_collection.samplers import UniformSamplingDistribution
+from slimdqn.sample_collection.samplers import PrioritizedSamplingDistribution
 
 
 def run(argvs=sys.argv[1:]):
@@ -20,7 +20,7 @@ def run(argvs=sys.argv[1:]):
 
     env = LunarLander()
     rb = ReplayBuffer(
-        sampling_distribution=UniformSamplingDistribution(p["seed"]),
+        sampling_distribution=PrioritizedSamplingDistribution(p["seed"], p["replay_buffer_capacity"]),
         max_capacity=p["replay_buffer_capacity"],
         batch_size=p["batch_size"],
         observation_shape=(env.observation_shape[0],),
@@ -29,7 +29,7 @@ def run(argvs=sys.argv[1:]):
         update_horizon=p["update_horizon"],
         gamma=p["gamma"],
     )
-    agent = DQN(
+    agent = PER(
         q_key,
         env.observation_shape[0],
         env.n_actions,

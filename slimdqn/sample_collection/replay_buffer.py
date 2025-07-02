@@ -2,6 +2,7 @@
 """Simpler implementation of the standard DQN replay memory."""
 import jax
 import numpy as np
+import jax.numpy as jnp
 
 from flax import struct
 
@@ -39,9 +40,10 @@ class ReplayBuffer:
     def __init__(
         self,
         sampling_distribution: UniformSamplingDistribution | PrioritizedSamplingDistribution,
-        batch_size: int,
         max_capacity: int,
+        batch_size: int,
         observation_shape: tuple,
+        observation_dtype,
         stack_size: int = 4,
         update_horizon: int = 1,
         gamma: float = 0.99,
@@ -52,7 +54,7 @@ class ReplayBuffer:
         self.add_count = stack_size - 1
         self._max_capacity = max_capacity
         self._observation_shape = observation_shape
-        self._observation_stack = np.zeros((max_capacity,) + observation_shape, dtype=np.float32)
+        self._observation_stack = np.zeros((max_capacity,) + observation_shape, dtype=observation_dtype)
         self._action_stack = np.zeros((max_capacity,), dtype=np.int32)
         self._reward_stack = np.zeros((max_capacity,), dtype=np.float32)
         self._is_terminal_stack = np.ones((max_capacity,), dtype=np.int8)
@@ -84,7 +86,7 @@ class ReplayBuffer:
                 else False
             )
         self._last_is_truncation = is_truncation
-        # THINK Prioritized RB add here --> how does it change?
+        self._sampling_distribution.add(mod(self.add_count, self._max_capacity))
         self.add_count += 1
         if (is_terminal or is_truncation) and self._stack_size > 1:
             self._observation_stack[
@@ -107,22 +109,33 @@ class ReplayBuffer:
             gamma = self._gamma
 
         batch = []
-        indices = self._sampling_distribution.sample(0, min(self.add_count - 1, self._max_capacity - 1), batch_size)
+        indices = self._sampling_distribution.sample(
+            size=batch_size, index_max=min(self.add_count - 1, self._max_capacity - 1)
+        )
+        batch_indices = []
         for index in indices:
             n_sample_trials = 1
             is_valid, sample = self._check_valid(index, n, gamma)
             while (not is_valid) and n_sample_trials < self._max_sample_trials:
-                index = self._sampling_distribution.sample(0, min(self.add_count - 1, self._max_capacity - 1), 1)[0]
+                index = self._sampling_distribution.sample(
+                    size=1, index_max=min(self.add_count - 1, self._max_capacity - 1)
+                )[0]
                 n_sample_trials += 1
                 is_valid, sample = self._check_valid(index, n, gamma)
 
             assert is_valid, "Could not construct a valid batch"
+            batch_indices.append(index)
             state, action, reward, next_state, is_terminal = sample
             batch.append(ReplayElement(state, action, reward, next_state, is_terminal))
-        return jax.tree_util.tree_map(lambda *xs: np.stack(xs), *batch)
 
-    def update(self, indices, **kwargs):
-        self._sampling_distribution.update(indices, **kwargs)
+        batch_indices = jnp.array(batch_indices)
+        return jax.tree_util.tree_map(lambda *xs: np.stack(xs), *batch), {
+            "indices": batch_indices,
+            "probabilities": self._sampling_distribution.get_probabilities(batch_indices),
+        }
+
+    def update(self, metadata):
+        self._sampling_distribution.update(metadata)
 
     def _check_valid(self, index, n, gamma):
         is_state_invalid = self._stack_size > 1 and (

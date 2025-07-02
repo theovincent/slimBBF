@@ -2,9 +2,6 @@
 """Sampling distributions."""
 
 import numpy as np
-import numpy.typing as npt
-
-import jax
 
 from slimdqn.sample_collection import sum_tree
 
@@ -18,71 +15,33 @@ class UniformSamplingDistribution:
     def add(self, index):
         pass
 
-    def remove(self, index):
-        pass
-
-    def sample(self, index_min, index_max, n_samples):
-        return self._rng_key.integers(index_min, index_max, size=n_samples, endpoint=True)
+    def sample(self, size, index_max):
+        return self._rng_key.integers(0, index_max, size=size, endpoint=True)
 
 
 class PrioritizedSamplingDistribution(UniformSamplingDistribution):
     """A prioritized sampling distribution."""
 
-    def __init__(
-        self,
-        seed: int,
-        max_capacity: int,
-        priority_exponent: float = 1.0,
-    ) -> None:
+    def __init__(self, seed: int, max_capacity: int) -> None:
         self._max_capacity = max_capacity
-        self._priority_exponent = priority_exponent
         self._sum_tree = sum_tree.SumTree(self._max_capacity)
         super().__init__(seed=seed)
 
-    def add(self, key, priority: float) -> None:
-        super().add(key)
-        if priority is None:
-            priority = 0.0
-        self._sum_tree.set(
-            self._key_to_index[key],
-            0.0 if priority == 0.0 else priority**self._priority_exponent,
-        )
+    def add(self, index) -> None:
+        self._sum_tree.set(index, np.sqrt(self._sum_tree.max_recorded_priority))
 
-    def update(self, keys, priorities) -> None:
-        if not isinstance(keys, np.ndarray):
-            keys = np.asarray([keys], dtype=np.int32)
+    def update(self, metadata) -> None:
+        priorities = np.where(
+            metadata["loss"] == 0.0, 0.0, np.sqrt(metadata["loss"])
+        )  # to handle negative priority_exponent
+        self._sum_tree.set(metadata["indices"], priorities)
 
-        priorities = np.where(priorities == 0.0, 0.0, priorities**self._priority_exponent)
-        self._sum_tree.set(
-            np.fromiter((self._key_to_index[key] for key in keys), dtype=np.int32),
-            priorities,
-        )
-
-    def remove(self, key) -> None:
-        index = self._key_to_index[key]
-        last_index = len(self._index_to_key) - 1
-        if index == last_index:
-            # If index and last_index are the same, simply set the priority to 0.0.
-            self._sum_tree.set(index, 0.0)
-        else:
-            # Otherwise, swap priorities with current index and last index
-            # as that's how we pop the key from our datastructure.
-            # This will run in O(logn) where n is the # of elements in the tree
-            self._sum_tree.set(
-                np.asarray([index, last_index], dtype=np.int32),
-                np.asarray([self._sum_tree.get(last_index), 0.0]),
-            )
-        super().remove(key)
-
-    def sample(self, size: int):
+    def sample(self, size, index_max):
         if self._sum_tree.root == 0.0:
-            keys = super().sample(size).keys
-            return keys
+            return super().sample(size)
 
         targets = self._rng_key.uniform(0.0, self._sum_tree.root, size=size)
-        indices = self._sum_tree.query(targets)
-        return np.fromiter(
-            (self._index_to_key[index] for index in indices),
-            count=size,
-            dtype=np.int32,
-        )
+        return self._sum_tree.query(targets)
+
+    def get_probabilities(self, indices):
+        return self._sum_tree.get(indices) / self._sum_tree.root
