@@ -18,6 +18,9 @@ class UniformSamplingDistribution:
     def sample(self, size, index_max):
         return self._rng_key.integers(0, index_max, size=size, endpoint=True)
 
+    def get_probabilities(self, indices):
+        return None
+
 
 class PrioritizedSamplingDistribution(UniformSamplingDistribution):
     """A prioritized sampling distribution."""
@@ -31,9 +34,7 @@ class PrioritizedSamplingDistribution(UniformSamplingDistribution):
         self._sum_tree.set(index, np.sqrt(self._sum_tree.max_recorded_priority))
 
     def update(self, metadata) -> None:
-        priorities = np.where(
-            metadata["loss"] == 0.0, 0.0, np.sqrt(metadata["loss"])
-        )  # to handle negative priority_exponent
+        priorities = np.where(metadata["loss"] == 0.0, 0.0, np.sqrt(metadata["loss"]))
         self._sum_tree.set(metadata["indices"], priorities)
 
     def sample(self, size, index_max):
