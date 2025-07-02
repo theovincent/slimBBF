@@ -31,7 +31,7 @@ class PrioritizedSamplingDistribution(UniformSamplingDistribution):
         super().__init__(seed=seed)
 
     def add(self, index) -> None:
-        self._sum_tree.set(index, np.sqrt(self._sum_tree.max_recorded_priority))
+        self._sum_tree.set(index, self._sum_tree.max_recorded_priority)
 
     def update(self, metadata) -> None:
         priorities = np.where(metadata["loss"] == 0.0, 0.0, np.sqrt(metadata["loss"]))
