@@ -109,17 +109,13 @@ class ReplayBuffer:
             gamma = self._gamma
 
         batch = []
-        indices = self._sampling_distribution.sample(
-            size=batch_size, index_max=min(self.add_count - 1, self._max_capacity - 1)
-        )
+        indices = self._sampling_distribution.sample(size=batch_size)
         batch_indices = []
         for index in indices:
             n_sample_trials = 1
             is_valid, sample = self._check_valid(index, n, gamma)
             while (not is_valid) and n_sample_trials < self._max_sample_trials:
-                index = self._sampling_distribution.sample(
-                    size=1, index_max=min(self.add_count - 1, self._max_capacity - 1)
-                )[0]
+                index = self._sampling_distribution.sample(size=1)[0]
                 n_sample_trials += 1
                 is_valid, sample = self._check_valid(index, n, gamma)
 
