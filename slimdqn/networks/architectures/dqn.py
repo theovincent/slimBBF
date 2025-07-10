@@ -142,16 +142,14 @@ class TransitionModel(nn.Module):
 
 class SPRNet(nn.Module):
     features: Sequence[int]
-    architecture_type: str
     n_actions: int
-    n_atoms: int
 
     def setup(self):
         self.encoder = ImpalaEncoder(width_scale=self.features[:3])
-        self.transition_model = TransitionModel(n_actions=self.num_actions, latent_dim=self.features[2])
+        self.transition_model = TransitionModel(n_actions=self.n_actions, latent_dim=self.features[2])
         self.projection = nn.Dense(self.features[3], kernel_init=nn.initializers.xavier_uniform())
         self.predictor = nn.Dense(self.features[3], kernel_init=nn.initializers.xavier_uniform())
-        self.q_logits_head = nn.Dense(self.num_actions * self.num_atoms, kernel_init=nn.initializers.xavier_uniform())
+        self.q_logits_head = nn.Dense(self.n_actions, kernel_init=nn.initializers.xavier_uniform())
 
     def spr_predict(self, x):
         projected = self.projection(x)
@@ -165,17 +163,18 @@ class SPRNet(nn.Module):
         return predictions
 
     @nn.compact
-    def __call__(self, x, actions=None, do_rollout=False):
+    def __call__(self, x, actions=None):
         spatial_latent = renormalize(self.encoder(x))
-        representation = spatial_latent.reshape(-1)
+        representation = spatial_latent.reshape(spatial_latent.shape[0], -1)
 
         # Single hidden layer
-        x = self.projection(representation)
+        x = self.projection(representation[0])
         x = nn.relu(x)
 
         q_logits = self.q_logits_head(x)
 
-        if do_rollout:
-            spatial_latent = self.spr_rollout(spatial_latent, actions)
+        if actions is None:
+            return q_logits
 
-        return q_logits, spatial_latent
+        spatial_latent = self.spr_rollout(spatial_latent, actions)
+        return q_logits, spatial_latent, jax.vmap(self.projection)(representation)
