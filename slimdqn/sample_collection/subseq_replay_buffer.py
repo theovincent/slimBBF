@@ -27,7 +27,7 @@ def compute_first_true_index(array, indices):
     return indices[all_indices[0]] if len(all_indices) > 0 else indices[-1] + 1
 
 
-class ReplayElement(struct.PyTreeNode):
+class SubsequenceReplayElement(struct.PyTreeNode):
     states_stack: np.ndarray[np.float64]
     actions_stack: np.ndarray[np.int32]
     reward: float
@@ -126,7 +126,9 @@ class SubsequenceReplayBuffer:
             batch_indices.append(index)
             states_stack, actions_stack, reward, next_state, is_terminal, same_trajectory_mask = sample
             batch.append(
-                ReplayElement(states_stack, actions_stack, reward, next_state, is_terminal, same_trajectory_mask)
+                SubsequenceReplayElement(
+                    states_stack, actions_stack, reward, next_state, is_terminal, same_trajectory_mask
+                )
             )
 
         batch_indices = jnp.array(batch_indices)
