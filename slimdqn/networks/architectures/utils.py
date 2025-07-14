@@ -1,7 +1,10 @@
+import collections
 import functools
 
 import jax
 import jax.numpy as jnp
+import numpy as np
+from flax.core.frozen_dict import FrozenDict
 
 
 @functools.partial(jax.vmap, in_axes=(0, 0, 0, None))
@@ -55,3 +58,80 @@ def renormalize(tensor, has_batch=False):
     max_value = jnp.max(tensor, axis=-1, keepdims=True)
     min_value = jnp.min(tensor, axis=-1, keepdims=True)
     return ((tensor - min_value) / (max_value - min_value + 1e-5)).reshape(*shape)
+
+
+def copy_params(source, target, keys):
+    """Copies a set of keys from source to target."""
+    if isinstance(source, dict) or isinstance(source, collections.OrderedDict) or isinstance(source, FrozenDict):
+        fresh_dict = {}
+        for k, v in source.items():
+            if k in keys:
+                fresh_dict[k] = v
+            else:
+                fresh_dict[k] = copy_params(source[k], target[k], keys)
+        return fresh_dict
+    else:
+        return target
+
+
+@functools.partial(jax.jit, static_argnames=("keys"))
+def interpolate_weights(old_params, new_params, old_weight, new_weight, keys):
+
+    old_params = old_params["params"]
+    new_params = new_params["params"]
+
+    def combination(old_param, new_param):
+        return old_param * old_weight + new_param * new_weight
+
+    combined_params = {}
+    if keys is None:
+        keys = old_params.keys()
+    for k in keys:
+        combined_params[k] = jax.tree_util.tree_map(combination, old_params[k], new_params[k])
+    for k, v in old_params.items():
+        if k not in keys:
+            combined_params[k] = v
+
+    return {"params": combined_params}
+
+
+def exponential_decay_scheduler(decay_period, warmup_steps, initial_value, final_value, reverse=False):
+    """Instantiate a logarithmic schedule for a parameter.
+
+    By default the extreme point to or from which values decay logarithmically
+    is 0, while changes near 1 are fast. In cases where this may not
+    be correct (e.g., lambda) pass reversed=True to get proper
+    exponential scaling.
+
+    Args:
+        decay_period: float, the period over which the value is decayed.
+        warmup_steps: int, the number of steps taken before decay starts.
+        initial_value: float, the starting value for the parameter.
+        final_value: float, the final value for the parameter.
+        reverse: bool, whether to treat 1 as the asmpytote instead of 0.
+
+    Returns:
+        A decay function mapping step to parameter value.
+    """
+    if reverse:
+        initial_value = 1 - initial_value
+        final_value = 1 - final_value
+
+    start = np.log(initial_value)
+    end = np.log(final_value)
+
+    if decay_period == 0:
+        return lambda x: initial_value if x < warmup_steps else final_value
+
+    def scheduler(step):
+        steps_left = decay_period + warmup_steps - step
+        bonus_frac = steps_left / decay_period
+        bonus = np.clip(bonus_frac, 0.0, 1.0)
+        new_value = bonus * (start - end) + end
+
+        new_value = np.exp(new_value)
+        if reverse:
+            new_value = 1 - new_value
+        return new_value
+
+    return scheduler

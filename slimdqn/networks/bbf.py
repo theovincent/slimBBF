@@ -9,7 +9,7 @@ from slimdqn.networks.architectures.dqn import SPRNet
 from slimdqn.sample_collection.subseq_replay_buffer import SubsequenceReplayBuffer, SubsequenceReplayElement
 
 
-class SPR:
+class BBF:
     def __init__(
         self,
         key: jax.random.PRNGKey,
@@ -18,37 +18,45 @@ class SPR:
         n_bins: int,
         features: list,
         learning_rate: float,
-        gamma: float,
-        update_horizon: int,
+        min_gamma: float,
+        max_gamma: float,
+        min_update_horizon: int,
+        max_update_horizon: int,
+        horizon_cycle_steps: int,
         update_to_data: int,
         target_update_frequency: int,
+        target_update_tau: float,
+        reset_frequency: int,
+        shrink_factor: float,
+        perturb_factor: float,
         min_value: float,
         max_value: float,
+        spr_weight: float,
         adam_eps: float = 1e-8,
     ):
         self.n_bins = n_bins
-        self.network = SPRNet(features, n_actions * self.n_bins)
+        self.network = SPRNet(features, n_actions, n_bins)
 
-        def network_apply_fn_spr(params, states, actions):
-            q_logits, latent_predictions, latent_targets = self.network.apply(params, states, actions)
-            q_logits = q_logits.reshape((n_actions, self.n_bins))
-            return q_logits, latent_predictions, latent_targets
-
-        self.network.apply_fn = network_apply_fn_spr
-        self.apply_fn_inference = lambda params, state: self.network.apply(params, state).reshape(
-            (n_actions, self.n_bins)
-        )
+        self.network.apply_fn = lambda params, states, actions: self.network.apply(params, states, actions)
+        self.apply_fn_inference = lambda params, state: self.network.apply(params, state)
 
         self.params = self.network.init(key, jnp.zeros(observation_dim, dtype=jnp.float32))
 
         self.optimizer = optax.adam(learning_rate, eps=adam_eps)
         self.optimizer_state = self.optimizer.init(self.params)
 
-        self.gamma = gamma
-        self.update_horizon = update_horizon
+        self.min_gamma = min_gamma
+        self.max_gamma = max_gamma
+        self.min_update_horizon = min_update_horizon
+        self.max_update_horizon = max_update_horizon
+        self.horizon_cycle_steps = horizon_cycle_steps
         self.update_to_data = update_to_data
-        assert target_update_frequency == 1, "SPR has TUF=1"
         self.target_update_frequency = target_update_frequency
+        self.target_update_tau = target_update_tau
+        self.reset_frequency = reset_frequency
+        self.shrink_factor = shrink_factor
+        self.perturb_factor = perturb_factor
+        self.spr_weight = spr_weight
         self.cumulated_loss = 0
         self.cumulated_unsupported_prob = 0
         self.support = jnp.linspace(min_value, max_value, self.n_bins, dtype=jnp.float32)

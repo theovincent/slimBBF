@@ -4,7 +4,7 @@ import jax
 import flax.linen as nn
 import jax.numpy as jnp
 
-from slimdqn.networks.architectures.utils import normalize_and_augment, renormalize
+from slimdqn.networks.architectures.utils import renormalize
 
 
 class Stack(nn.Module):
@@ -143,24 +143,22 @@ class TransitionModel(nn.Module):
 class SPRNet(nn.Module):
     features: Sequence[int]
     n_actions: int
+    n_bins: int
 
     def setup(self):
         self.encoder = ImpalaEncoder(width_scale=self.features[:3])
         self.transition_model = TransitionModel(n_actions=self.n_actions, latent_dim=self.features[2])
         self.projection = nn.Dense(self.features[3], kernel_init=nn.initializers.xavier_uniform())
         self.predictor = nn.Dense(self.features[3], kernel_init=nn.initializers.xavier_uniform())
-        self.q_logits_head = nn.Dense(self.n_actions, kernel_init=nn.initializers.xavier_uniform())
-
-    def spr_predict(self, x):
-        projected = self.projection(x)
-        return self.predictor(projected)
+        self.q_logits_head = nn.Dense(self.n_actions * self.n_bins, kernel_init=nn.initializers.xavier_uniform())
 
     def spr_rollout(self, latent, actions):
         _, pred_latents = self.transition_model(latent, actions)
 
         representations = pred_latents.reshape(pred_latents.shape[0], -1)
-        predictions = jax.vmap(self.spr_predict)(representations)
-        return predictions
+        projected_representations = jax.vmap(self.projection)(representations)
+        predictions = jax.vmap(self.predictor)(representations)
+        return projected_representations, predictions
 
     @nn.compact
     def __call__(self, x, actions=None):
@@ -171,10 +169,10 @@ class SPRNet(nn.Module):
         x = self.projection(representation[0])
         x = nn.relu(x)
 
-        q_logits = self.q_logits_head(x)
+        q_logits = self.q_logits_head(x).reshape((self.n_actions, self.n_bins))
 
         if actions is None:
             return q_logits
 
-        spatial_latent = self.spr_rollout(spatial_latent, actions)
-        return q_logits, spatial_latent, jax.vmap(self.projection)(representation)
+        projected_representations, predictions = self.spr_rollout(spatial_latent, actions)
+        return q_logits, projected_representations, predictions
