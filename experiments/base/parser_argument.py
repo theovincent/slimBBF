@@ -123,7 +123,7 @@ def add_base_arguments(parser: argparse.ArgumentParser):
         "-utd",
         "--update_to_data",
         help="Number of data points to collect per online Q-network update.",
-        type=float,
+        type=int,
         default=1,
     )
     parser.add_argument(
@@ -162,7 +162,7 @@ def add_categorical_loss_arguments(parser: argparse.ArgumentParser):
         "--n_bins",
         help="Number of bins composing the histogram.",
         type=int,
-        default=50,
+        default=51,
     )
     parser.add_argument(
         "-minn",
@@ -193,3 +193,92 @@ def add_per_arguments(parser: argparse.ArgumentParser):
 @output_added_arguments
 def add_rainbow_arguments(parser: argparse.ArgumentParser):
     add_categorical_loss_arguments(parser)
+
+
+@output_added_arguments
+def add_bbf_arguments(parser: argparse.ArgumentParser):
+    add_categorical_loss_arguments(parser)
+    parser.add_argument(
+        "-min_gamma",
+        "--min_gamma",
+        help="Minimum discounting factor to start exp growth from.",
+        type=float,
+        default=0.97,
+    )
+    parser.add_argument(
+        "-max_n",
+        "--max_update_horizon",
+        help="Maximum value of n in n-step TD update to start decay from.",
+        type=int,
+        default=10,
+    )
+    parser.add_argument(
+        "-nupts",
+        "--n_updates_per_train_step",
+        help="Number of online Q-network updates at every train step.",
+        type=int,
+        default=2,
+    )
+    parser.add_argument(
+        "-hcs",
+        "--horizon_cycle_steps",
+        help="Number of steps to vary n and gamma over.",
+        type=float,
+        default=5_000,
+    )
+    parser.add_argument(
+        "-tut",
+        "--target_update_tau",
+        help="Fraction for Polyak averaging at target update.",
+        type=float,
+        default=0.005,
+    )
+    parser.add_argument(
+        "-rf",
+        "--reset_frequency",
+        help="Number of steps before resetting the network (shrink and perturb).",
+        type=int,
+        default=20_000,
+    )
+    parser.add_argument(
+        "-nras",
+        "--no_resets_after_step",
+        help="Maximum step to perform resets upto.",
+        type=int,
+        default=100_000,
+    )
+    parser.add_argument(
+        "-sf",
+        "--shrink_factor",
+        help="Shrink scale at resetting.",
+        type=float,
+        default=0.5,
+    )
+    parser.add_argument(
+        "-pf",
+        "--perturb_factor",
+        help="Perturb scale at resetting.",
+        type=float,
+        default=0.5,
+    )
+    parser.add_argument(
+        "-sprj",
+        "--spr_jumps",
+        help="SPR loss window size.",
+        type=int,
+        default=5,
+    )
+    parser.add_argument(
+        "-sprw",
+        "--spr_weight",
+        help="Scaling factor for SPR loss.",
+        type=float,
+        default=5,
+    )
+    parser.add_argument(
+        "-tfas",
+        "--target_for_action_selection",
+        help="Use target network to collect samples.",
+        default=False,
+        action="store_true",
+    )

@@ -1,5 +1,7 @@
 # Inspired by dopamine implementation: https://github.com/google/dopamine/blob/master/dopamine/jax/replay_memory/replay_buffer.py
 """Simpler implementation of the subsequence replay memory (SPR style)."""
+from functools import partial
+from concurrent import futures
 import jax
 import numpy as np
 import jax.numpy as jnp
@@ -103,7 +105,7 @@ class SubsequenceReplayBuffer:
             ] = 0
             self.add_count += self._stack_size - 1
 
-    def sample(self, batch_size=None, n=None, gamma=None):
+    def sample(self, n_batches=1, batch_size=None, n=None, gamma=None):
         if batch_size is None:
             batch_size = self._batch_size
         if n is None:
@@ -111,6 +113,12 @@ class SubsequenceReplayBuffer:
         if gamma is None:
             gamma = self._gamma
 
+        idx_and_batches = [self.sample_single_batch(idx_batch, batch_size, n, gamma) for idx_batch in range(n_batches)]
+
+        # sort the list of idx_and_batches from their index and output the batches only (idx_and_batches[1])
+        return list(map(lambda x: x[1], sorted(idx_and_batches, key=lambda x: x[0])))
+
+    def sample_single_batch(self, idx_batch, batch_size, n, gamma):
         batch = []
         indices = self._sampling_distribution.sample(size=batch_size)
         batch_indices = []
@@ -132,10 +140,16 @@ class SubsequenceReplayBuffer:
             )
 
         batch_indices = jnp.array(batch_indices)
-        return jax.tree_util.tree_map(lambda *xs: np.stack(xs), *batch), {
-            "indices": batch_indices,
-            "probabilities": self._sampling_distribution.get_probabilities(batch_indices),
-        }
+        return (
+            idx_batch,
+            (
+                jax.tree_util.tree_map(lambda *xs: np.stack(xs), *batch),
+                {
+                    "indices": batch_indices,
+                    "probabilities": self._sampling_distribution.get_probabilities(batch_indices),
+                },
+            ),
+        )
 
     def update(self, metadata):
         self._sampling_distribution.update(metadata)

@@ -15,9 +15,24 @@ def select_action(best_action_fn, params, state, key, n_actions, epsilon_fn, n_t
     )
 
 
-def collect_single_sample(key, env, agent, rb: ReplayBuffer, p, epsilon_schedule, n_training_steps: int):
+def collect_single_sample(
+    key,
+    env,
+    agent,
+    rb: ReplayBuffer,
+    p,
+    epsilon_schedule,
+    n_training_steps: int,
+    target_for_action_selection: bool = False,
+):
     action = select_action(
-        agent.best_action, agent.params, env.state, key, env.n_actions, epsilon_schedule, n_training_steps
+        agent.best_action,
+        agent.target_params if target_for_action_selection else agent.params,
+        env.state,
+        key,
+        env.n_actions,
+        epsilon_schedule,
+        n_training_steps,
     ).item()
 
     obs = env.observation

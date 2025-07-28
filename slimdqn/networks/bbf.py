@@ -2,10 +2,17 @@ from functools import partial
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
 from flax.core import FrozenDict
 
 from slimdqn.networks.architectures.dqn import SPRNet
+from slimdqn.networks.architectures.utils import (
+    copy_params,
+    interpolate_weights,
+    normalize_and_augment,
+    exponential_decay_scheduler,
+)
 from slimdqn.sample_collection.subseq_replay_buffer import SubsequenceReplayBuffer, SubsequenceReplayElement
 
 
@@ -19,12 +26,12 @@ class BBF:
         features: list,
         learning_rate: float,
         min_gamma: float,
-        max_gamma: float,
-        min_update_horizon: int,
+        gamma: float,
+        update_horizon: int,
         max_update_horizon: int,
         horizon_cycle_steps: int,
         update_to_data: int,
-        target_update_frequency: int,
+        n_updates_per_train_step: int,
         target_update_tau: float,
         reset_frequency: int,
         shrink_factor: float,
@@ -33,117 +40,232 @@ class BBF:
         max_value: float,
         spr_weight: float,
         adam_eps: float = 1e-8,
+        adam_weight_decay: float = 0.1,
     ):
         self.n_bins = n_bins
+        self.observation_dim = observation_dim
         self.network = SPRNet(features, n_actions, n_bins)
 
-        self.network.apply_fn = lambda params, states, actions: self.network.apply(params, states, actions)
-        self.apply_fn_inference = lambda params, state: self.network.apply(params, state)
+        self.key = key
 
-        self.params = self.network.init(key, jnp.zeros(observation_dim, dtype=jnp.float32))
+        param_key, init_key, self.key = jax.random.split(self.key, 3)
+        self.params = FrozenDict(
+            self.network.init(
+                x=jnp.zeros(observation_dim, dtype=jnp.float32),
+                actions=jnp.zeros((5,)),
+                rng=init_key,
+                rngs={"params": param_key},
+                do_rollout=False,
+            )
+        )
 
-        self.optimizer = optax.adam(learning_rate, eps=adam_eps)
+        optimizer = optax.adamw(
+            learning_rate,
+            eps=adam_eps,
+            weight_decay=adam_weight_decay,
+            mask=lambda p: jax.tree_util.tree_map(lambda x: x.ndim != 1, p),
+        )
+        encoder_optimizer = optax.adamw(
+            learning_rate,
+            eps=adam_eps,
+            weight_decay=adam_weight_decay,
+            mask=lambda p: jax.tree_util.tree_map(lambda x: x.ndim != 1, p),
+        )
+        self.encoder_mask = FrozenDict(
+            {"params": {k: k in ("encoder", "transition_model") for k in self.params["params"]}}
+        )
+        self.head_mask = FrozenDict(
+            {"params": {k: k not in ("encoder", "transition_model") for k in self.params["params"]}}
+        )
+
+        self.optimizer = optax.chain(
+            optax.masked(encoder_optimizer, self.encoder_mask),
+            optax.masked(optimizer, self.head_mask),
+        )
         self.optimizer_state = self.optimizer.init(self.params)
+        self.target_params = self.params
+        self.random_params = self.params
 
         self.min_gamma = min_gamma
-        self.max_gamma = max_gamma
-        self.min_update_horizon = min_update_horizon
+        self.gamma = gamma
+        self.update_horizon = update_horizon
         self.max_update_horizon = max_update_horizon
-        self.horizon_cycle_steps = horizon_cycle_steps
+        self.gamma_scheduler = exponential_decay_scheduler(horizon_cycle_steps, 0, min_gamma, gamma, reverse=True)
+        update_horizon_schedule = exponential_decay_scheduler(
+            horizon_cycle_steps, 0, 1, update_horizon / max_update_horizon
+        )
+        self.update_horizon_scheduler = lambda x: int(np.round(update_horizon_schedule(x) * max_update_horizon))
+        self.horizon_cycle_grad_steps = 0
         self.update_to_data = update_to_data
-        self.target_update_frequency = target_update_frequency
+        self.n_updates_per_train_step = n_updates_per_train_step
         self.target_update_tau = target_update_tau
         self.reset_frequency = reset_frequency
         self.shrink_factor = shrink_factor
         self.perturb_factor = perturb_factor
         self.spr_weight = spr_weight
         self.cumulated_loss = 0
-        self.cumulated_unsupported_prob = 0
-        self.support = jnp.linspace(min_value, max_value, self.n_bins, dtype=jnp.float32)
+        self.support = jnp.linspace(min_value, max_value, n_bins, dtype=jnp.float32)
+
+    def apply_multiple_updates(self, params, params_target, optimizer_state, batch_and_metadatas, replay_buffer):
+        def apply_single_update(state, batch_and_metadata):
+            batch, metadata = batch_and_metadata
+            params, optimizer_state, loss = self.learn_on_batch(
+                state[0], params_target, state[1], batch, metadata["probabilities"]
+            )
+            return (params, optimizer_state), (loss, metadata)
+
+        batches, metadatas = zip(*batch_and_metadatas)
+        batches = jax.tree.map(lambda *batch: jnp.stack(batch), *batches)
+        metadatas = jax.tree.map(lambda *metadata: jnp.stack(metadata), *metadatas)
+
+        (final_params, final_optimizer_state), loss_and_metadata_list = jax.lax.scan(
+            apply_single_update, (params, optimizer_state), (batches, metadatas)
+        )
+        metadatas = loss_and_metadata_list[1]
+        metadatas["indices"] = metadatas["indices"].reshape(-1)
+        metadatas["probabilities"] = metadatas["probabilities"].reshape(-1)
+        metadatas["loss"] = loss_and_metadata_list[0].reshape(-1)
+
+        replay_buffer.update(metadatas)
+
+        return final_params, final_optimizer_state, jnp.sum(metadatas["loss"])
 
     def update_online_params(self, step: int, replay_buffer: SubsequenceReplayBuffer):
         if step % self.update_to_data == 0:
-            batch_samples, metadata = replay_buffer.sample()
-
-            self.params, self.optimizer_state, losses, unsupported_prob = self.learn_on_batch(
-                self.params, self.optimizer_state, batch_samples, metadata["probabilities"]
+            batch_and_metadatas = replay_buffer.sample(
+                n_batches=self.n_updates_per_train_step,
+                batch_size=replay_buffer._batch_size,
+                n=self.update_horizon_scheduler(self.horizon_cycle_grad_steps),
+                gamma=self.gamma_scheduler(self.horizon_cycle_grad_steps),
             )
-            metadata.update({"loss": losses})
-            replay_buffer.update(metadata)
 
-            self.cumulated_loss += losses.mean()
-            self.cumulated_unsupported_prob += unsupported_prob
+            self.params, self.optimizer_state, loss = self.apply_multiple_updates(
+                self.params, self.target_params, self.optimizer_state, batch_and_metadatas, replay_buffer
+            )
+            self.cumulated_loss += loss
 
-    def update_target_params(self, step: int):
-        if step % self.target_update_frequency == 0:
+    def update_target_params(self, step):
+        self.target_params = interpolate_weights(
+            self.target_params,
+            self.params,
+            old_weight=1 - self.target_update_tau,
+            new_weight=self.target_update_tau,
+            keys=None,  # all keys
+        )
 
-            logs = {
-                "loss": self.cumulated_loss / (self.target_update_frequency / self.update_to_data),
-                "unsupported_prob": self.cumulated_unsupported_prob
-                / (self.target_update_frequency / self.update_to_data),
-            }
-            self.cumulated_loss = 0
-            self.cumulated_unsupported_prob = 0
+        logs = {"loss": self.cumulated_loss / self.n_updates_per_train_step * self.update_to_data}
+        self.cumulated_loss = 0
 
-            return True, logs
-        return False, {}
+        return True, logs
+
+    def reset_network_params(self, step: int):
+        if step % self.reset_frequency == 0:  # need more conditions on not_reset_after and reset_offset
+            reset_key, self.key = jax.random.split(self.key)
+            self.params, self.target_params, self.optimizer_state, self.random_params = self.reset_params(
+                self.params, self.target_params, self.optimizer_state, reset_key
+            )
 
     @partial(jax.jit, static_argnames="self")
-    def learn_on_batch(self, params: FrozenDict, optimizer_state, batch_samples, batch_probabilities):
-        grad_loss, (losses, unsupported_prob) = jax.grad(self.loss_on_batch, has_aux=True)(
-            params, batch_samples, batch_probabilities
+    def reset_params(self, params, target_params, optimizer_state, reset_key):
+        online_key, target_key = jax.random.split(reset_key, 2)
+        random_params = self.network.init(
+            x=jnp.zeros(self.observation_dim, dtype=jnp.float32),
+            actions=jnp.zeros((5,)),
+            rngs={"params": online_key},
         )
-        updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state)
+        target_random_params = self.network.init(
+            x=jnp.zeros(self.observation_dim, dtype=jnp.float32),
+            actions=jnp.zeros((5,)),
+            rngs={"params": target_key},
+        )
+
+        params = interpolate_weights(
+            params,
+            random_params,
+            ("encoder", "transition_model"),
+            old_weight=self.shrink_factor,
+            new_weight=self.perturb_factor,
+        )
+        params = FrozenDict(copy_params(params, random_params, keys=("encoder", "transition_model")))
+
+        updated_optim_state = []
+        optim_state = self.optimizer.init(params)
+        for i in range(len(optim_state)):
+            optim_to_copy = copy_params(
+                dict(optimizer_state[i]._asdict()), dict(optim_state[i]._asdict()), keys=("encoder", "transition_model")
+            )
+            optim_to_copy = FrozenDict(optim_to_copy)
+            updated_optim_state.append(optim_state[i]._replace(**optim_to_copy))
+        optimizer_state = tuple(updated_optim_state)
+
+        target_params = interpolate_weights(
+            target_params,
+            target_random_params,
+            ("encoder", "transition_model"),
+            old_weight=self.shrink_factor,
+            new_weight=self.perturb_factor,
+        )
+        target_params = copy_params(target_params, target_random_params, keys=("encoder", "transition_model"))
+        target_params = FrozenDict(target_params)
+
+        return params, target_params, optimizer_state, random_params
+
+    @partial(jax.jit, static_argnames="self")
+    def learn_on_batch(
+        self, params: FrozenDict, params_target: FrozenDict, optimizer_state, batch_samples, batch_probabilities
+    ):
+        grad_loss, (losses) = jax.grad(self.loss_on_batch, has_aux=True)(
+            params, params_target, batch_samples, batch_probabilities
+        )
+        updates, optimizer_state = self.optimizer.update(grad_loss, optimizer_state, params)
         params = optax.apply_updates(params, updates)
 
-        return params, optimizer_state, losses, unsupported_prob
+        return params, optimizer_state, losses
 
-    def loss_on_batch(self, params: FrozenDict, samples, batch_probabilities):
-        losses, unsupported_probs = jax.vmap(self.loss, in_axes=(None, None, 0))(params, samples)
+    def loss_on_batch(self, params: FrozenDict, params_target: FrozenDict, samples, batch_probabilities):
+        losses, td_losses = jax.vmap(self.loss, in_axes=(None, None, 0))(params, params_target, samples)
         loss_weights = 1.0 / jnp.sqrt(batch_probabilities + 1e-10)  # sqrt because beta is fixed to 0.5 in PER
         loss_weights /= jnp.max(loss_weights)
-        return (losses * loss_weights).mean(), (losses, unsupported_probs.mean())
+        return (losses * loss_weights).mean(), (td_losses)
 
-    def loss(self, params: FrozenDict, sample: SubsequenceReplayElement):
+    def loss(self, params: FrozenDict, params_target: FrozenDict, sample: SubsequenceReplayElement):
         # computes the loss for a single sample
-        target_support, target_prob = self.compute_target(params, sample)
-        q_logits, latent_predictions, latent_targets = self.network.apply_fn(
-            params, sample.states_stack, sample.actions_stack
+        spr_targets = self.network.apply(params_target, sample.states_stack[1:], method=self.network.encode_project)
+        target_support, target_prob = self.compute_target(params_target, sample)
+        projected_target = self.project_target_on_support(target_support, target_prob)
+
+        q_logits, spr_predictions = self.network.apply(
+            params, sample.states_stack[0], sample.actions_stack[:-1], do_rollout=False
         )
-        q_logits = q_logits[sample.action[0]]
-        projected_target, unsupported_prob = self.project_target_on_support(target_support, target_prob)
+        q_logits = q_logits[sample.actions_stack[0]]
+
         cross_entropy = optax.softmax_cross_entropy(q_logits, jax.lax.stop_gradient(projected_target))
-        spr_loss = optax.squared_error(latent_predictions, jax.lax.stop_gradient(latent_targets))
-        spr_loss = spr_loss * sample.sample_trajectory_mask
-        return cross_entropy + self.spr_weight * spr_loss, unsupported_prob
+
+        spr_predictions = spr_predictions / jnp.linalg.norm(spr_predictions, 2, -1, keepdims=True)
+        spr_targets = spr_targets / jnp.linalg.norm(spr_targets, 2, -1, keepdims=True)
+
+        spr_loss = jnp.power(spr_predictions - jax.lax.stop_gradient(spr_targets), 2).sum(-1)
+        spr_loss = (spr_loss * sample.same_trajectory_mask[:-1]).mean(0)
+        return cross_entropy + self.spr_weight * spr_loss, (cross_entropy)
 
     def compute_target(self, params: FrozenDict, sample: SubsequenceReplayElement):
         # computes the target value for single sample
         target_support = sample.reward + (1 - sample.is_terminal) * (self.gamma**self.update_horizon) * self.support
-        target_logits = self.apply_fn_inference(params, sample.next_state)
+        target_logits = self.network.apply(params, sample.next_state)
         target_prob = jax.nn.softmax(target_logits[jnp.argmax(jax.nn.softmax(target_logits) @ self.support)])
         return target_support, target_prob
 
     def project_target_on_support(self, target_support: jax.Array, target_prob: jax.Array) -> jax.Array:
         delta_z = (self.support[-1] - self.support[0]) / (self.n_bins - 1)
         clipped_support = jnp.clip(target_support, self.support[0], self.support[-1])
-        return (
-            jnp.clip(1 - jnp.abs(clipped_support - self.support[:, None]) / delta_z, 0, 1) @ target_prob,
-            (
-                (
-                    jnp.clip(1 - jnp.abs(clipped_support - self.support[:, None]) / delta_z, 0, 1)[jnp.array([0, -1])]
-                    == 1  # just take probabilities beyond vmin (0) and vmax (-1)
-                )
-                @ target_prob
-            ).sum(),
-        )
+        return jnp.clip(1 - jnp.abs(clipped_support - self.support[:, None]) / delta_z, 0, 1) @ target_prob
 
     @partial(jax.jit, static_argnames="self")
     def best_action(self, params: FrozenDict, state: jnp.ndarray, **kwargs):
         # computes the best action for a single state
         # We first compute the probabilities by applying the softmax on the last axis (bin axis).
         # Then, we compute the expectation by multiplying with the bin centers.
-        return jnp.argmax(jax.nn.softmax(self.network.apply_fn(params, state)) @ self.support)
+        return jnp.argmax(jax.nn.softmax(self.network.apply(params, state)) @ self.support)
 
     def get_model(self):
         return {"params": self.params}

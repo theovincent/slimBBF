@@ -4,11 +4,11 @@ import sys
 import jax
 import numpy as np
 
-from experiments.base.dqn import train
+from experiments.base.bbf import train
 from experiments.base.utils import prepare_logs
-from slimdqn.environments.lunar_lander import LunarLander
+from slimdqn.environments.atari import AtariEnv
 from slimdqn.networks.bbf import BBF
-from slimdqn.sample_collection.replay_buffer import ReplayBuffer
+from slimdqn.sample_collection.subseq_replay_buffer import SubsequenceReplayBuffer
 from slimdqn.sample_collection.samplers import PrioritizedSamplingDistribution
 
 
@@ -18,31 +18,42 @@ def run(argvs=sys.argv[1:]):
 
     q_key, train_key = jax.random.split(jax.random.PRNGKey(p["seed"]))
 
-    env = LunarLander()
-    rb = ReplayBuffer(
+    env = AtariEnv(p["experiment_name"].split("_")[-1], sticky_actions=False)
+    rb = SubsequenceReplayBuffer(
         sampling_distribution=PrioritizedSamplingDistribution(p["seed"], p["replay_buffer_capacity"]),
         max_capacity=p["replay_buffer_capacity"],
         batch_size=p["batch_size"],
-        observation_shape=env.observation_shape,
-        observation_dtype=np.float32,
-        stack_size=1,
+        observation_shape=(env.state_height, env.state_width),
+        observation_dtype=np.uint8,
+        spr_window=p["spr_jumps"],
+        stack_size=4,
         update_horizon=p["update_horizon"],
         gamma=p["gamma"],
+        clipping=lambda x: np.clip(x, -1, 1),
     )
     agent = BBF(
         q_key,
-        env.observation_shape[0],
+        (env.state_height, env.state_width, env.n_stacked_frames),
         env.n_actions,
         n_bins=p["n_bins"],
         features=p["features"],
-        architecture_type=p["architecture_type"],
         learning_rate=p["learning_rate"],
+        min_gamma=p["min_gamma"],
         gamma=p["gamma"],
         update_horizon=p["update_horizon"],
+        max_update_horizon=p["max_update_horizon"],
+        horizon_cycle_steps=p["horizon_cycle_steps"],
         update_to_data=p["update_to_data"],
-        target_update_frequency=p["target_update_frequency"],
+        n_updates_per_train_step=p["n_updates_per_train_step"],
+        target_update_tau=p["target_update_tau"],
+        reset_frequency=p["reset_frequency"],
+        shrink_factor=p["shrink_factor"],
+        perturb_factor=p["perturb_factor"],
         min_value=p["min_value"],
         max_value=p["max_value"],
+        spr_weight=p["spr_weight"],
+        adam_eps=1.5e-4,
+        adam_weight_decay=0.1,
     )
     train(train_key, p, agent, env, rb)
 

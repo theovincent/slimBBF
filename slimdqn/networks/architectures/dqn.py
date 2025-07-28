@@ -4,7 +4,7 @@ import jax
 import flax.linen as nn
 import jax.numpy as jnp
 
-from slimdqn.networks.architectures.utils import renormalize
+from slimdqn.networks.architectures.utils import normalize_and_augment, renormalize
 
 
 class Stack(nn.Module):
@@ -129,15 +129,14 @@ class TransitionModel(nn.Module):
 
     @nn.compact
     def __call__(self, x, action):
-        return nn.scan(
+        scan = nn.scan(
             ConvTMCell,
             in_axes=0,
             out_axes=0,
             variable_broadcast=["params"],
             split_rngs={"params": False},
-        )(
-            n_actions=self.n_actions, latent_dim=self.latent_dim
-        )(x, action)
+        )(latent_dim=self.latent_dim, n_actions=self.n_actions)
+        return scan(x, action)
 
 
 class SPRNet(nn.Module):
@@ -146,7 +145,7 @@ class SPRNet(nn.Module):
     n_bins: int
 
     def setup(self):
-        self.encoder = ImpalaEncoder(width_scale=self.features[:3])
+        self.encoder = ImpalaEncoder(features=self.features[:3])
         self.transition_model = TransitionModel(n_actions=self.n_actions, latent_dim=self.features[2])
         self.projection = nn.Dense(self.features[3], kernel_init=nn.initializers.xavier_uniform())
         self.predictor = nn.Dense(self.features[3], kernel_init=nn.initializers.xavier_uniform())
@@ -154,25 +153,36 @@ class SPRNet(nn.Module):
 
     def spr_rollout(self, latent, actions):
         _, pred_latents = self.transition_model(latent, actions)
-
         representations = pred_latents.reshape(pred_latents.shape[0], -1)
         projected_representations = jax.vmap(self.projection)(representations)
-        predictions = jax.vmap(self.predictor)(representations)
-        return projected_representations, predictions
+        predictions = jax.vmap(self.predictor)(projected_representations)
+        return predictions
+
+    def encode_project(self, x):
+        representation = renormalize(self.encoder(x))
+        representation = representation.reshape(representation.shape[0], -1)
+        return self.projection(representation)
 
     @nn.compact
-    def __call__(self, x, actions=None):
+    def __call__(self, x, actions=None, rng=None, do_rollout=True):
+        x = normalize_and_augment(x, rng)
         spatial_latent = renormalize(self.encoder(x))
-        representation = spatial_latent.reshape(spatial_latent.shape[0], -1)
+        if actions is None or not do_rollout:
+            representation = spatial_latent.reshape(-1)
+        else:
+            representation = spatial_latent.reshape(spatial_latent.shape[0], -1)
 
         # Single hidden layer
-        x = self.projection(representation[0])
+        x = self.projection(representation)
         x = nn.relu(x)
 
+        if x.ndim > 1:
+            assert actions is not None
+            x = x[0]
         q_logits = self.q_logits_head(x).reshape((self.n_actions, self.n_bins))
 
         if actions is None:
             return q_logits
 
-        projected_representations, predictions = self.spr_rollout(spatial_latent, actions)
-        return q_logits, projected_representations, predictions
+        spr_predictions = self.spr_rollout(spatial_latent, actions)
+        return q_logits, spr_predictions
