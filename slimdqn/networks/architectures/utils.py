@@ -93,7 +93,7 @@ def interpolate_weights(old_params, new_params, old_weight, new_weight, keys):
         if k not in keys:
             combined_params[k] = v
 
-    return {"params": combined_params}
+    return FrozenDict({"params": combined_params})
 
 
 def exponential_decay_scheduler(decay_period, warmup_steps, initial_value, final_value, reverse=False):

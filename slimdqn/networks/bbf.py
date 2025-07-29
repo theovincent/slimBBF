@@ -10,7 +10,6 @@ from slimdqn.networks.architectures.dqn import SPRNet
 from slimdqn.networks.architectures.utils import (
     copy_params,
     interpolate_weights,
-    normalize_and_augment,
     exponential_decay_scheduler,
 )
 from slimdqn.sample_collection.subseq_replay_buffer import SubsequenceReplayBuffer, SubsequenceReplayElement
@@ -168,23 +167,29 @@ class BBF:
     @partial(jax.jit, static_argnames="self")
     def reset_params(self, params, target_params, optimizer_state, reset_key):
         online_key, target_key = jax.random.split(reset_key, 2)
-        random_params = self.network.init(
-            x=jnp.zeros(self.observation_dim, dtype=jnp.float32),
-            actions=jnp.zeros((5,)),
-            rngs={"params": online_key},
+        random_params = FrozenDict(
+            self.network.init(
+                x=jnp.zeros(self.observation_dim, dtype=jnp.float32),
+                actions=jnp.zeros((5,)),
+                rngs={"params": online_key},
+                do_rollout=False,
+            )
         )
-        target_random_params = self.network.init(
-            x=jnp.zeros(self.observation_dim, dtype=jnp.float32),
-            actions=jnp.zeros((5,)),
-            rngs={"params": target_key},
+        target_random_params = FrozenDict(
+            self.network.init(
+                x=jnp.zeros(self.observation_dim, dtype=jnp.float32),
+                actions=jnp.zeros((5,)),
+                rngs={"params": target_key},
+                do_rollout=False,
+            )
         )
 
         params = interpolate_weights(
-            params,
-            random_params,
-            ("encoder", "transition_model"),
+            old_params=params,
+            new_params=random_params,
             old_weight=self.shrink_factor,
             new_weight=self.perturb_factor,
+            keys=("encoder", "transition_model"),
         )
         params = FrozenDict(copy_params(params, random_params, keys=("encoder", "transition_model")))
 
@@ -199,11 +204,11 @@ class BBF:
         optimizer_state = tuple(updated_optim_state)
 
         target_params = interpolate_weights(
-            target_params,
-            target_random_params,
-            ("encoder", "transition_model"),
+            old_params=target_params,
+            new_params=target_random_params,
             old_weight=self.shrink_factor,
             new_weight=self.perturb_factor,
+            keys=("encoder", "transition_model"),
         )
         target_params = copy_params(target_params, target_random_params, keys=("encoder", "transition_model"))
         target_params = FrozenDict(target_params)
