@@ -30,7 +30,6 @@ class BBF:
         max_update_horizon: int,
         horizon_cycle_steps: int,
         update_to_data: int,
-        n_updates_per_train_step: int,
         target_update_tau: float,
         reset_frequency: int,
         shrink_factor: float,
@@ -96,7 +95,6 @@ class BBF:
         self.update_horizon_scheduler = lambda x: int(np.round(update_horizon_schedule(x) * max_update_horizon))
         self.horizon_cycle_grad_steps = 0
         self.update_to_data = update_to_data
-        self.n_updates_per_train_step = n_updates_per_train_step
         self.target_update_tau = target_update_tau
         self.reset_frequency = reset_frequency
         self.shrink_factor = shrink_factor
@@ -130,18 +128,17 @@ class BBF:
         return final_params, final_optimizer_state, jnp.sum(metadatas["loss"])
 
     def update_online_params(self, step: int, replay_buffer: SubsequenceReplayBuffer):
-        if step % self.update_to_data == 0:
-            batch_and_metadatas = replay_buffer.sample(
-                n_batches=self.n_updates_per_train_step,
-                batch_size=replay_buffer._batch_size,
-                n=self.update_horizon_scheduler(self.horizon_cycle_grad_steps),
-                gamma=self.gamma_scheduler(self.horizon_cycle_grad_steps),
-            )
+        batch_and_metadatas = replay_buffer.sample(
+            n_batches=self.update_to_data,
+            batch_size=replay_buffer._batch_size,
+            n=self.update_horizon_scheduler(self.horizon_cycle_grad_steps),
+            gamma=self.gamma_scheduler(self.horizon_cycle_grad_steps),
+        )
 
-            self.params, self.optimizer_state, loss = self.apply_multiple_updates(
-                self.params, self.target_params, self.optimizer_state, batch_and_metadatas, replay_buffer
-            )
-            self.cumulated_loss += loss
+        self.params, self.optimizer_state, loss = self.apply_multiple_updates(
+            self.params, self.target_params, self.optimizer_state, batch_and_metadatas, replay_buffer
+        )
+        self.cumulated_loss += loss
 
     def update_target_params(self, step):
         self.target_params = interpolate_weights(
@@ -152,7 +149,7 @@ class BBF:
             keys=None,  # all keys
         )
 
-        logs = {"loss": self.cumulated_loss / self.n_updates_per_train_step * self.update_to_data}
+        logs = {"loss": self.cumulated_loss / self.update_to_data}
         self.cumulated_loss = 0
 
         return True, logs

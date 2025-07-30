@@ -44,7 +44,6 @@ def run(argvs=sys.argv[1:]):
         max_update_horizon=p["max_update_horizon"],
         horizon_cycle_steps=p["horizon_cycle_steps"],
         update_to_data=p["update_to_data"],
-        n_updates_per_train_step=p["n_updates_per_train_step"],
         target_update_tau=p["target_update_tau"],
         reset_frequency=p["reset_frequency"],
         shrink_factor=p["shrink_factor"],
