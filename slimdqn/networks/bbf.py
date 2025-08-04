@@ -103,41 +103,40 @@ class BBF:
         self.cumulated_loss = 0
         self.support = jnp.linspace(min_value, max_value, n_bins, dtype=jnp.float32)
 
-    def apply_multiple_updates(self, params, params_target, optimizer_state, batch_and_metadatas, replay_buffer):
-        def apply_single_update(state, batch_and_metadata):
-            batch, metadata = batch_and_metadata
+    @partial(jax.jit, static_argnames="self")
+    def apply_multiple_updates(self, params, params_target, optimizer_state, batches, probabilities):
+        def apply_single_update(state, batches_and_probability):
+            batch, batch_probability = batches_and_probability
             params, optimizer_state, loss = self.learn_on_batch(
-                state[0], params_target, state[1], batch, metadata["probabilities"]
+                state[0], params_target, state[1], batch, batch_probability
             )
-            return (params, optimizer_state), (loss, metadata)
+            return (params, optimizer_state), (loss)
 
-        batches, metadatas = zip(*batch_and_metadatas)
         batches = jax.tree.map(lambda *batch: jnp.stack(batch), *batches)
-        metadatas = jax.tree.map(lambda *metadata: jnp.stack(metadata), *metadatas)
+        probabilities = jax.tree.map(lambda *probability: jnp.stack(probability), *probabilities)
 
-        (final_params, final_optimizer_state), loss_and_metadata_list = jax.lax.scan(
-            apply_single_update, (params, optimizer_state), (batches, metadatas)
+        (final_params, final_optimizer_state), losses = jax.lax.scan(
+            apply_single_update, (params, optimizer_state), (batches, probabilities)
         )
-        metadatas = loss_and_metadata_list[1]
-        metadatas["indices"] = metadatas["indices"].reshape(-1)
-        metadatas["probabilities"] = metadatas["probabilities"].reshape(-1)
-        metadatas["loss"] = loss_and_metadata_list[0].reshape(-1)
-
-        replay_buffer.update(metadatas)
-
-        return final_params, final_optimizer_state, jnp.sum(metadatas["loss"])
+        return final_params, final_optimizer_state, jnp.sum(losses), losses
 
     def update_online_params(self, step: int, replay_buffer: SubsequenceReplayBuffer):
-        batch_and_metadatas = replay_buffer.sample(
+        batches_and_metadatas = replay_buffer.sample(
             n_batches=self.update_to_data,
             batch_size=replay_buffer._batch_size,
             n=self.update_horizon_scheduler(self.horizon_cycle_grad_steps),
             gamma=self.gamma_scheduler(self.horizon_cycle_grad_steps),
         )
+        # import pdb
 
-        self.params, self.optimizer_state, loss = self.apply_multiple_updates(
-            self.params, self.target_params, self.optimizer_state, batch_and_metadatas, replay_buffer
+        # pdb.set_trace()
+        batches = [i[0] for i in batches_and_metadatas]
+        indices = jnp.array([i[1]["indices"] for i in batches_and_metadatas])
+        probabilities = jnp.array([i[1]["probabilities"] for i in batches_and_metadatas])
+        self.params, self.optimizer_state, loss, per_sample_loss = self.apply_multiple_updates(
+            self.params, self.target_params, self.optimizer_state, batches, probabilities
         )
+        replay_buffer.update({"loss": per_sample_loss.reshape(-1), "indices": indices.reshape(-1)})
         self.cumulated_loss += loss
 
     def update_target_params(self, step):
