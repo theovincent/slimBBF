@@ -75,7 +75,9 @@ class ReplayBuffer:
         self._action_stack[mod(self.add_count, self._max_capacity)] = action
         self._reward_stack[mod(self.add_count, self._max_capacity)] = reward
         self._is_terminal_stack[mod(self.add_count, self._max_capacity)] = is_terminal
-        self._is_truncation_stack[mod(self.add_count, self._max_capacity)] = False if is_terminal else True
+        self._is_truncation_stack[mod(self.add_count, self._max_capacity)] = (
+            False if is_terminal else True
+        )  # we technically truncate if stop the run here
         if self.add_count >= self._stack_size:
             self._is_truncation_stack[mod(self.add_count - 1, self._max_capacity)] = (
                 self._last_is_truncation
@@ -134,15 +136,16 @@ class ReplayBuffer:
             or np.any(self._is_truncation_stack[index_range(index - self._stack_size + 1, index, self._max_capacity)])
         )
 
+        index_range_for_rewards = index_range(index, index + n - 1, self._max_capacity)
         first_terminal_index = mod(
-            compute_first_true_index(self._is_terminal_stack, index_range(index, index + n - 1, self._max_capacity)),
-            self._max_capacity,
+            compute_first_true_index(self._is_terminal_stack, index_range_for_rewards), self._max_capacity
         )
         first_truncation_index = mod(
-            compute_first_true_index(self._is_truncation_stack, index_range(index, index + n - 1, self._max_capacity)),
-            self._max_capacity,
+            compute_first_true_index(self._is_truncation_stack, index_range_for_rewards), self._max_capacity
         )
-        is_next_state_valid = first_terminal_index <= first_truncation_index
+        is_next_state_valid = (
+            first_terminal_index in index_range_for_rewards or first_truncation_index not in index_range_for_rewards
+        )
 
         if (not is_state_invalid) and is_next_state_valid:
             return self._construct_batch_sample(index, first_terminal_index, n, gamma)
