@@ -36,7 +36,7 @@ class PrioritizedSamplingDistribution(UniformSamplingDistribution):
         self._sum_tree.set(index, self._sum_tree.max_recorded_priority)
 
     def update(self, metadata) -> None:
-        priorities = np.where(metadata["loss"] == 0.0, 0.0, np.sqrt(metadata["loss"]))
+        priorities = np.where(metadata["loss"] == 0.0, 0.0, np.sqrt(metadata["loss"]))  # loss should be absolute
         self._sum_tree.set(metadata["indices"], priorities)
 
     def sample(self, size):
@@ -46,4 +46,6 @@ class PrioritizedSamplingDistribution(UniformSamplingDistribution):
         return self._sum_tree.query(targets)
 
     def get_probabilities(self, indices):
+        if self._sum_tree.root == 0.0:
+            return np.ones_like(indices) / len(indices)
         return self._sum_tree.get(indices) / self._sum_tree.root
