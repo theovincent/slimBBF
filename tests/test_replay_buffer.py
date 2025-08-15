@@ -4,8 +4,7 @@ from absl.testing import absltest
 from absl.testing import parameterized
 import numpy as np
 
-from slimdqn.sample_collection import replay_buffer
-from slimdqn.sample_collection.replay_buffer import ReplayElement
+from slimdqn.sample_collection.replay_buffer import ReplayBuffer
 from slimdqn.sample_collection import samplers
 
 
@@ -31,7 +30,7 @@ class ReplayBufferTest(parameterized.TestCase):
     def testAddUpToCapacity(self):
         capacity = 10
         add_count = 15
-        rb = replay_buffer.ReplayBuffer(
+        rb = ReplayBuffer(
             sampling_distribution=samplers.UniformSamplingDistribution(seed=0),
             max_capacity=capacity,
             batch_size=BATCH_SIZE,
@@ -58,7 +57,7 @@ class ReplayBufferTest(parameterized.TestCase):
                 self.assertEqual(rb._is_truncation_stack[idx], False)
 
     def testNSteprewards(self):
-        rb = replay_buffer.ReplayBuffer(
+        rb = ReplayBuffer(
             sampling_distribution=samplers.UniformSamplingDistribution(seed=0),
             max_capacity=10,
             batch_size=BATCH_SIZE,
@@ -81,7 +80,7 @@ class ReplayBufferTest(parameterized.TestCase):
     def testGetStack(self):
         zero_state = np.zeros(OBSERVATION_SHAPE + (3,))
 
-        rb = replay_buffer.ReplayBuffer(
+        rb = ReplayBuffer(
             sampling_distribution=samplers.UniformSamplingDistribution(seed=0),
             max_capacity=50,
             batch_size=BATCH_SIZE,
@@ -110,7 +109,7 @@ class ReplayBufferTest(parameterized.TestCase):
             )
 
     def testSampleTransitionBatch(self):
-        rb = replay_buffer.ReplayBuffer(
+        rb = ReplayBuffer(
             sampling_distribution=samplers.UniformSamplingDistribution(seed=0),
             max_capacity=10,
             batch_size=2,
@@ -146,7 +145,7 @@ class ReplayBufferTest(parameterized.TestCase):
                     np.testing.assert_array_equal(expected_next_states[i], sample.next_state)
 
     def testSamplingWithTerminalInTrajectory(self):
-        rb = replay_buffer.ReplayBuffer(
+        rb = ReplayBuffer(
             sampling_distribution=samplers.UniformSamplingDistribution(seed=0),
             max_capacity=10,
             batch_size=2,
@@ -191,7 +190,7 @@ class ReplayBufferTest(parameterized.TestCase):
                     np.testing.assert_array_equal(expected_next_states[i], sample.next_state)
 
     def testStackSizeWithTerminalAndTruncation(self):
-        rb = replay_buffer.ReplayBuffer(
+        rb = ReplayBuffer(
             sampling_distribution=samplers.UniformSamplingDistribution(seed=0),
             max_capacity=10,
             batch_size=2,
@@ -234,7 +233,7 @@ class ReplayBufferTest(parameterized.TestCase):
                     np.testing.assert_array_equal(expected_next_states[i], sample.next_state)
 
     def testChangingUpdateHorizon(self):
-        rb = replay_buffer.ReplayBuffer(
+        rb = ReplayBuffer(
             sampling_distribution=samplers.UniformSamplingDistribution(seed=0),
             max_capacity=10,
             batch_size=2,
@@ -263,7 +262,7 @@ class ReplayBufferTest(parameterized.TestCase):
         np.testing.assert_equal(metadata["indices"], np.array([1, 1]))
 
     def testChangingGamma(self):
-        rb = replay_buffer.ReplayBuffer(
+        rb = ReplayBuffer(
             sampling_distribution=samplers.UniformSamplingDistribution(seed=0),
             max_capacity=10,
             batch_size=2,
