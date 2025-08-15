@@ -123,7 +123,7 @@ class ReplayBuffer:
 
             assert sample, "Could not construct a valid batch"
             batch_indices.append(index)
-            batch.append(ReplayElement(*sample))
+            batch.append(sample)
 
         return jax.tree_util.tree_map(lambda *xs: np.stack(xs), *batch), {
             "indices": jnp.array(batch_indices),
@@ -177,4 +177,4 @@ class ReplayBuffer:
             self._observation_stack[index_range(index + n - self._stack_size + 1, index + n, self._max_capacity)], 0, -1
         )
 
-        return (state, action, reward, next_state, is_terminal)
+        return ReplayElement(state, action, reward, next_state, is_terminal)

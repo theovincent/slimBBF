@@ -96,16 +96,18 @@ class ReplayBufferTest(parameterized.TestCase):
 
         # ensure that the returned shapes are always correct
         for i in range(3, 7):
-            np.testing.assert_array_equal(rb._check_valid_and_get_sample(i, 1, 1.0)[0].shape, OBSERVATION_SHAPE + (4,))
+            np.testing.assert_array_equal(
+                rb._check_valid_and_get_sample(i, 1, 1.0).state.shape, OBSERVATION_SHAPE + (4,)
+            )
 
         # ensure that there is the necessary 0 padding
-        state = rb._check_valid_and_get_sample(3, 1, 1.0)[0]
-        np.testing.assert_array_equal(zero_state, state[:, :, :3])
+        np.testing.assert_array_equal(zero_state, rb._check_valid_and_get_sample(3, 1, 1.0).state[:, :, :3])
 
         # ensure that after the padding the contents are properly stored
-        state = rb._check_valid_and_get_sample(6, 1, 1.0)[0]
         for i in range(4):
-            np.testing.assert_array_equal(np.full(OBSERVATION_SHAPE, i), state[:, :, i])
+            np.testing.assert_array_equal(
+                np.full(OBSERVATION_SHAPE, i), rb._check_valid_and_get_sample(6, 1, 1.0).state[:, :, i]
+            )
 
     def testSampleTransitionBatch(self):
         rb = replay_buffer.ReplayBuffer(
@@ -136,12 +138,12 @@ class ReplayBufferTest(parameterized.TestCase):
             if expected_truncations[i]:
                 self.assertEqual(sample, None)
             else:
-                np.testing.assert_array_equal(expected_states[i], sample[0])
-                np.testing.assert_array_equal(expected_actions_and_rewards[i], sample[1])
-                np.testing.assert_array_equal(expected_actions_and_rewards[i], sample[2])
-                np.testing.assert_array_equal(expected_terminals[i], sample[4])
+                np.testing.assert_array_equal(expected_states[i], sample.state)
+                np.testing.assert_array_equal(expected_actions_and_rewards[i], sample.action)
+                np.testing.assert_array_equal(expected_actions_and_rewards[i], sample.reward)
+                np.testing.assert_array_equal(expected_terminals[i], sample.is_terminal)
                 if not expected_terminals[i]:
-                    np.testing.assert_array_equal(expected_next_states[i], sample[3])
+                    np.testing.assert_array_equal(expected_next_states[i], sample.next_state)
 
     def testSamplingWithTerminalInTrajectory(self):
         rb = replay_buffer.ReplayBuffer(
@@ -181,12 +183,12 @@ class ReplayBufferTest(parameterized.TestCase):
             if expected_actions[i] is None:
                 self.assertEqual(sample, None)
             else:
-                np.testing.assert_array_equal(expected_states[i], sample[0])
-                np.testing.assert_array_equal(expected_actions[i], sample[1])
-                np.testing.assert_array_equal(expected_rewards[i], sample[2])
-                np.testing.assert_array_equal(expected_terminals[i], sample[4])
+                np.testing.assert_array_equal(expected_states[i], sample.state)
+                np.testing.assert_array_equal(expected_actions[i], sample.action)
+                np.testing.assert_array_equal(expected_rewards[i], sample.reward)
+                np.testing.assert_array_equal(expected_terminals[i], sample.is_terminal)
                 if not expected_terminals[i]:
-                    np.testing.assert_array_equal(expected_next_states[i], sample[3])
+                    np.testing.assert_array_equal(expected_next_states[i], sample.next_state)
 
     def testStackSizeWithTerminalAndTruncation(self):
         rb = replay_buffer.ReplayBuffer(
@@ -224,12 +226,12 @@ class ReplayBufferTest(parameterized.TestCase):
             if expected_states[i] is None:
                 self.assertEqual(sample, None)
             else:
-                np.testing.assert_array_equal(expected_states[i], sample[0])
-                np.testing.assert_array_equal(expected_actions_and_rewards[i], sample[1])
-                np.testing.assert_array_equal(expected_actions_and_rewards[i], sample[2])
-                np.testing.assert_array_equal(False, sample[4])
+                np.testing.assert_array_equal(expected_states[i], sample.state)
+                np.testing.assert_array_equal(expected_actions_and_rewards[i], sample.action)
+                np.testing.assert_array_equal(expected_actions_and_rewards[i], sample.reward)
+                np.testing.assert_array_equal(False, sample.is_terminal)
                 if expected_next_states[i] is not None:
-                    np.testing.assert_array_equal(expected_next_states[i], sample[3])
+                    np.testing.assert_array_equal(expected_next_states[i], sample.next_state)
 
     def testChangingUpdateHorizon(self):
         rb = replay_buffer.ReplayBuffer(
