@@ -21,7 +21,7 @@ def index_range(a: int, b: int, N: int):
 
 def compute_first_true_index(array, indices):
     all_indices = np.where(array[indices] > 0)[0]
-    return indices[all_indices[0]] if len(all_indices) > 0 else indices[-1] + 1
+    return indices[all_indices[0]] if len(all_indices) > 0 else None
 
 
 class ReplayElement(struct.PyTreeNode):
@@ -68,7 +68,7 @@ class ReplayBuffer:
         self._clipping = clipping
         self._max_sample_trials = max_sample_trials
 
-        self._last_is_truncation = False
+        self._last_is_truncation = True
 
     def add(self, observation, action, reward, is_terminal, is_truncation) -> None:
         self._observation_stack[mod(self.add_count, self._max_capacity)] = observation
@@ -78,17 +78,20 @@ class ReplayBuffer:
         self._is_truncation_stack[mod(self.add_count, self._max_capacity)] = (
             False if is_terminal else True
         )  # we technically truncate if stop the run here
-        if self.add_count >= self._stack_size:
-            self._is_truncation_stack[mod(self.add_count - 1, self._max_capacity)] = (
-                self._last_is_truncation
-                if not self._is_terminal_stack[mod(self.add_count - 1, self._max_capacity)]
-                else False  # truncation is False if terminated
-            )
+        if not self._last_is_truncation:
+            self._is_truncation_stack[mod(self.add_count - 1, self._max_capacity)] = False
+
         self._last_is_truncation = is_truncation
         self._sampling_distribution.add(mod(self.add_count, self._max_capacity))
         self.add_count += 1
         if (is_terminal or is_truncation) and self._stack_size > 1:  # to fill zeroed frames
             self._observation_stack[
+                index_range(self.add_count, self.add_count + self._stack_size - 2, self._max_capacity)
+            ] = 0
+            self._action_stack[
+                index_range(self.add_count, self.add_count + self._stack_size - 2, self._max_capacity)
+            ] = 0
+            self._reward_stack[
                 index_range(self.add_count, self.add_count + self._stack_size - 2, self._max_capacity)
             ] = 0
             self._is_terminal_stack[
@@ -136,15 +139,23 @@ class ReplayBuffer:
             or np.any(self._is_truncation_stack[index_range(index - self._stack_size + 1, index, self._max_capacity)])
         )
 
-        index_range_for_rewards = index_range(index, index + n - 1, self._max_capacity)
-        first_terminal_index = mod(
-            compute_first_true_index(self._is_terminal_stack, index_range_for_rewards), self._max_capacity
+        first_terminal_index = compute_first_true_index(
+            self._is_terminal_stack, index_range(index, index + n - 1, self._max_capacity)
         )
-        first_truncation_index = mod(
-            compute_first_true_index(self._is_truncation_stack, index_range_for_rewards), self._max_capacity
+        first_terminal_index = (
+            mod(first_terminal_index, self._max_capacity) if first_terminal_index is not None else None
         )
-        is_next_state_valid = (
-            first_terminal_index in index_range_for_rewards or first_truncation_index not in index_range_for_rewards
+        first_truncation_index = compute_first_true_index(
+            self._is_truncation_stack, index_range(index, index + n - 1, self._max_capacity)
+        )
+        first_truncation_index = (
+            mod(first_truncation_index, self._max_capacity) if first_truncation_index is not None else None
+        )
+
+        is_next_state_valid = (first_truncation_index is None) or (
+            first_truncation_index is not None
+            and first_terminal_index is not None
+            and first_terminal_index <= first_truncation_index
         )
 
         if (not is_state_invalid) and is_next_state_valid:
@@ -156,8 +167,10 @@ class ReplayBuffer:
             self._observation_stack[index_range(index - self._stack_size + 1, index, self._max_capacity)], 0, -1
         )
         action = self._action_stack[index]
-        is_terminal = first_terminal_index != mod(index + n, self._max_capacity)
-        reward = self._reward_stack[index_range(index, first_terminal_index - (not is_terminal), self._max_capacity)]
+        is_terminal = first_terminal_index is not None
+        reward = self._reward_stack[
+            index_range(index, first_terminal_index if is_terminal else index + n - 1, self._max_capacity)
+        ]
 
         reward = np.dot(reward, np.power(gamma, np.arange(len(reward))))
         next_state = np.moveaxis(
