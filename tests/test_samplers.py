@@ -46,18 +46,20 @@ class PrioritizedSamplingTest(parameterized.TestCase):
         losses = np.array([1.0, 4.0, 9.0, 16.0, 0.0])
 
         for index in indices:
-            self.sampler.add(index)
+            self.sampler.add(index)  # adds with priority 1
 
         self.assertEqual(self.sampler._sum_tree.root, 5)
-        self.sampler.update({"indices": indices, "loss": losses})
+        self.sampler.update({"indices": indices, "loss": losses})  # updates priorities to 1,2,3,4,0
         self.assertEqual(self.sampler._sum_tree.root, 10)
 
         # test if zero priority absent
         samples = self.sampler.sample(5)
-        np.testing.assert_array_less(samples, 4)
-        np.testing.assert_array_equal(self.sampler.get_probabilities(samples), (samples + 1) / 10)
+        np.testing.assert_array_less(samples, 4)  # 0 priority should not be sampled
+        np.testing.assert_array_equal(
+            self.sampler.get_probabilities(samples), (samples + 1) / 10
+        )  # probability numerator is index+1 (by design of test)
 
-        self.sampler.update({"indices": np.array([2, 3]), "loss": np.array([0.0, 0.0])})
+        self.sampler.update({"indices": np.array([2, 3]), "loss": np.array([0.0, 0.0])})  # now priorities are 1,2,0,0,0
 
         # test if priority updated properly
         samples = self.sampler.sample(5)
@@ -66,7 +68,7 @@ class PrioritizedSamplingTest(parameterized.TestCase):
 
         indices = np.array([5, 6, 7, 8, 9, 0, 1])
         for index in indices:
-            self.sampler.add(index)
+            self.sampler.add(index)  # now priorities should be 4,4,0,0,0,4,4,4,4,4 (max so far is 4)
         self.assertEqual(self.sampler._sum_tree.root, 28)
         samples = self.sampler.sample(20)
         self.assertEqual(np.bitwise_and(samples >= 2, samples <= 4).any(), 0)
