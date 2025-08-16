@@ -23,11 +23,12 @@ def run(argvs=sys.argv[1:]):
         sampling_distribution=UniformSamplingDistribution(p["seed"]),
         max_capacity=p["replay_buffer_capacity"],
         batch_size=p["batch_size"],
+        observation_shape=(env.state_height, env.state_width),
+        observation_dtype=np.uint8,
+        stack_size=4,
         update_horizon=p["update_horizon"],
         gamma=p["gamma"],
         clipping=lambda x: np.clip(x, -1, 1),
-        observation_shape=(env.state_height, env.state_width),
-        stack_size=4,
     )
     agent = DQN(
         q_key,
