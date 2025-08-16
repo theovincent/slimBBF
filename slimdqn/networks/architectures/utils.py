@@ -51,7 +51,7 @@ def normalize_and_augment(x, rng):
     return out
 
 
-def renormalize(tensor, has_batch=False):
+def max_min_normalize(tensor, has_batch=False):
     shape = tensor.shape
     if not has_batch:
         tensor = jnp.expand_dims(tensor, 0)
@@ -96,43 +96,9 @@ def interpolate_weights(old_params, new_params, old_weight, new_weight, keys):
     return FrozenDict({"params": combined_params})
 
 
-def exponential_decay_scheduler(decay_period, warmup_steps, initial_value, final_value, reverse=False):
-    """Instantiate a logarithmic schedule for a parameter.
-
-    By default the extreme point to or from which values decay logarithmically
-    is 0, while changes near 1 are fast. In cases where this may not
-    be correct (e.g., lambda) pass reversed=True to get proper
-    exponential scaling.
-
-    Args:
-        decay_period: float, the period over which the value is decayed.
-        warmup_steps: int, the number of steps taken before decay starts.
-        initial_value: float, the starting value for the parameter.
-        final_value: float, the final value for the parameter.
-        reverse: bool, whether to treat 1 as the asmpytote instead of 0.
-
-    Returns:
-        A decay function mapping step to parameter value.
-    """
-    if reverse:
-        initial_value = 1 - initial_value
-        final_value = 1 - final_value
-
-    start = np.log(initial_value)
-    end = np.log(final_value)
-
-    if decay_period == 0:
-        return lambda x: initial_value if x < warmup_steps else final_value
-
-    def scheduler(step):
-        steps_left = decay_period + warmup_steps - step
-        bonus_frac = steps_left / decay_period
-        bonus = np.clip(bonus_frac, 0.0, 1.0)
-        new_value = bonus * (start - end) + end
-
-        new_value = np.exp(new_value)
-        if reverse:
-            new_value = 1 - new_value
-        return new_value
-
-    return scheduler
+def exponential_scheduler(decay_period, initial_value, final_value):
+    return lambda step: (
+        np.exp(np.log(initial_value) + (step / decay_period) * np.log(final_value / initial_value))
+        if step <= decay_period
+        else final_value
+    )
