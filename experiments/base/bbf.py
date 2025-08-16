@@ -5,7 +5,7 @@ from tqdm import tqdm
 
 from experiments.base.utils import save_data
 from slimdqn.networks.bbf import BBF
-from slimdqn.sample_collection.replay_buffer import ReplayBuffer
+from slimdqn.sample_collection.subseq_replay_buffer import SubsequenceReplayBuffer
 from slimdqn.sample_collection.utils import collect_single_sample
 
 
@@ -14,7 +14,7 @@ def train(
     p: dict,
     agent: BBF,
     env,
-    rb: ReplayBuffer,
+    rb: SubsequenceReplayBuffer,
 ):
     epsilon_schedule = optax.linear_schedule(1.0, p["epsilon_end"], p["epsilon_duration"])
 
@@ -49,7 +49,9 @@ def train(
                 if target_updated:
                     p["wandb"].log({"n_training_steps": n_training_steps, **logs})
 
-            if p["no_resets_after_step"] - n_training_steps >= agent.reset_frequency:
+            if (
+                p["no_resets_after_step"] - n_training_steps >= agent.reset_frequency
+            ):  # not to reset if < reset_frequency steps left before no_resets_after_step
                 agent.reset_network_params(n_training_steps)
 
         avg_return = np.mean(episode_returns_per_epoch[idx_epoch])
