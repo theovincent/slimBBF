@@ -108,7 +108,7 @@ class ReplayBufferTest(parameterized.TestCase):
                 np.full(OBSERVATION_SHAPE, i), rb._check_valid_and_get_sample(6, 1, 1.0).state[:, :, i]
             )
 
-    def testSampleTransitionBatch(self):
+    def testFillBeyondCapacityWithTerminal(self):
         rb = ReplayBuffer(
             sampling_distribution=samplers.UniformSamplingDistribution(seed=0),
             max_capacity=10,
@@ -196,7 +196,7 @@ class ReplayBufferTest(parameterized.TestCase):
             batch_size=2,
             observation_shape=OBSERVATION_SHAPE,
             observation_dtype=np.uint8,
-            stack_size=4,
+            stack_size=STACK_SIZE,
             update_horizon=1,
             gamma=1,
         )
