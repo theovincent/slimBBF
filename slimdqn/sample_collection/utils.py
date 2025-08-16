@@ -27,7 +27,7 @@ def collect_single_sample(
 ):
     action = select_action(
         agent.best_action,
-        agent.target_params if target_for_action_selection else agent.params,
+        agent.target_params if target_for_action_selection else agent.params,  # BBF uses target network
         env.state,
         key,
         env.n_actions,
