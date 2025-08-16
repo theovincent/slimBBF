@@ -18,7 +18,7 @@ def run(argvs=sys.argv[1:]):
 
     q_key, train_key = jax.random.split(jax.random.PRNGKey(p["seed"]))
 
-    env = AtariEnv(p["experiment_name"].split("_")[-1], sticky_actions=False)
+    env = AtariEnv(p["experiment_name"].split("_")[-1], sticky_actions=False)  # no sticky actions in Atari 100k
     rb = SubsequenceReplayBuffer(
         sampling_distribution=PrioritizedSamplingDistribution(p["seed"], p["replay_buffer_capacity"]),
         max_capacity=p["replay_buffer_capacity"],
