@@ -4,7 +4,7 @@ import jax
 import flax.linen as nn
 import jax.numpy as jnp
 
-from slimdqn.networks.architectures.utils import normalize_and_augment, max_min_normalize
+from slimdqn.networks.architectures.utils import max_min_normalize
 
 
 class Stack(nn.Module):
@@ -156,21 +156,15 @@ class SPRNet(nn.Module):
         predictions = jax.vmap(self.predictor)(projected_representations)
         return predictions
 
-    def encode_project(self, x, augment_rng):
-        x = normalize_and_augment(x, augment_rng)
+    def encode_project(self, x):
         representation = max_min_normalize(self.encoder(x))
         representation = representation.reshape(representation.shape[0], -1)
         return self.projector(representation)
 
     @nn.compact
-    def __call__(self, x, actions=None, augment_rng=None):
-        x = normalize_and_augment(x, augment_rng)
+    def __call__(self, x, actions=None):
         spatial_latent = max_min_normalize(self.encoder(x))
-        if actions is None:
-            representation = spatial_latent.reshape(-1)
-        else:
-            representation = spatial_latent.reshape(spatial_latent.shape[0], -1)
-
+        representation = spatial_latent.reshape(-1)
         x = nn.relu(self.projector(representation))
 
         x = x[0] if x.ndim > 1 else x

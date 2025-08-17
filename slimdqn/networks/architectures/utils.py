@@ -43,7 +43,7 @@ def drq_augment(key, obs, img_pad=4):
     return aug_obs.reshape(*obs.shape)
 
 
-def normalize_and_augment(x, rng):
+def normalize_and_augment(x, rng=None):
     """Input normalization and if specified, data augmentation."""
     out = x.astype(jnp.float32) / 255.0
     if rng is not None:

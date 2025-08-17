@@ -1,5 +1,5 @@
 from functools import partial
-
+from dataclasses import replace
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -7,7 +7,12 @@ import optax
 from flax.core import FrozenDict
 
 from slimdqn.networks.architectures.dqn import SPRNet
-from slimdqn.networks.architectures.utils import copy_params, interpolate_weights, exponential_scheduler
+from slimdqn.networks.architectures.utils import (
+    copy_params,
+    interpolate_weights,
+    exponential_scheduler,
+    normalize_and_augment,
+)
 from slimdqn.sample_collection.subseq_replay_buffer import SubsequenceReplayBuffer, SubsequenceReplayElement
 
 
@@ -44,9 +49,8 @@ class BBF:
 
         param_key, init_key, self.key = jax.random.split(self.key, 3)
         self.params = self.network.init(
-            x=jnp.zeros((5, *observation_dim), dtype=jnp.float32),
+            x=jnp.zeros(observation_dim, dtype=jnp.float32),
             actions=jnp.zeros((5,)),
-            augment_rng=init_key,
             rngs={"params": param_key},
         )
 
@@ -73,7 +77,9 @@ class BBF:
         self.update_horizon = update_horizon
         self.max_update_horizon = max_update_horizon
         self.gamma_scheduler = exponential_scheduler(horizon_cycle_steps, min_gamma, gamma)
-        self.update_horizon_scheduler = exponential_scheduler(horizon_cycle_steps, update_horizon, max_update_horizon)
+        self.update_horizon_scheduler = lambda t: int(
+            exponential_scheduler(horizon_cycle_steps, update_horizon, max_update_horizon)(t)
+        )
         self.horizon_cycle_grad_steps = 0  # to track number of grad steps for schedulers
         self.update_to_data = update_to_data
         self.target_update_tau = target_update_tau
@@ -117,6 +123,7 @@ class BBF:
         )
         replay_buffer.update({"loss": per_sample_loss.reshape(-1), "indices": indices.reshape(-1)})
         self.cumulated_loss += jnp.mean(per_sample_loss)
+        self.horizon_cycle_grad_steps += self.update_to_data
 
     def update_target_params(self, step):
         self.target_params = interpolate_weights(
@@ -138,17 +145,18 @@ class BBF:
             self.params, self.target_params, self.optimizer_state = self.apply_reset_params(
                 self.params, self.target_params, self.optimizer_state, reset_key
             )
+            self.horizon_cycle_grad_steps = 0
 
     @partial(jax.jit, static_argnames="self")
     def apply_reset_params(self, params, target_params, optimizer_state, reset_key):
         online_key, target_key = jax.random.split(reset_key, 2)
         random_params = self.network.init(
-            x=jnp.zeros((5, *self.observation_dim), dtype=jnp.float32),
+            x=jnp.zeros(self.observation_dim, dtype=jnp.float32),
             actions=jnp.zeros((5,)),
             rngs={"params": online_key},
         )
         target_random_params = self.network.init(
-            x=jnp.zeros((5, *self.observation_dim), dtype=jnp.float32),
+            x=jnp.zeros(self.observation_dim, dtype=jnp.float32),
             actions=jnp.zeros((5,)),
             rngs={"params": target_key},
         )
@@ -197,6 +205,9 @@ class BBF:
         return params, optimizer_state, losses
 
     def loss_on_batch(self, params: FrozenDict, params_target: FrozenDict, samples, batch_probabilities):
+        augment_s_key, augment_ns_key, self.key = jax.random.split(self.key, 3)
+        samples = replace(samples, states_stack=normalize_and_augment(samples.states_stack, augment_s_key))
+        samples = replace(samples, next_state=normalize_and_augment(samples.next_state, augment_ns_key))
         losses, td_losses = jax.vmap(self.loss, in_axes=(None, None, 0))(params, params_target, samples)
         loss_weights = 1.0 / jnp.sqrt(batch_probabilities + 1e-10)  # sqrt because beta is fixed to 0.5 in PER
         loss_weights /= jnp.max(loss_weights)
@@ -207,10 +218,7 @@ class BBF:
         spr_targets = self.network.apply(params_target, sample.states_stack[1:], method=self.network.encode_project)
         target_support, target_prob = self.compute_target(params_target, sample)
         projected_target = self.project_target_on_support(target_support, target_prob)
-
-        q_logits, spr_predictions = self.network.apply(
-            params, sample.states_stack[0], sample.actions_stack[:-1], do_rollout=False
-        )
+        q_logits, spr_predictions = self.network.apply(params, sample.states_stack[0], sample.actions_stack[:-1])
         q_logits = q_logits[sample.actions_stack[0]]
 
         cross_entropy = optax.softmax_cross_entropy(q_logits, jax.lax.stop_gradient(projected_target))
