@@ -108,10 +108,12 @@ class BBF:
         return final_params, final_optimizer_state, losses
 
     def update_online_params(self, step: int, replay_buffer: SubsequenceReplayBuffer):
+        self.current_update_horizon = self.update_horizon_scheduler(self.horizon_cycle_grad_steps)
+        self.current_gamma = self.gamma_scheduler(self.horizon_cycle_grad_steps)
         batches_and_metadatas = [
             replay_buffer.sample(
-                n=self.update_horizon_scheduler(self.horizon_cycle_grad_steps),
-                gamma=self.gamma_scheduler(self.horizon_cycle_grad_steps),
+                n=self.current_update_horizon,
+                gamma=self.current_gamma,
             )
             for _ in range(self.update_to_data)
         ]
@@ -232,7 +234,9 @@ class BBF:
 
     def compute_target(self, params: FrozenDict, sample: SubsequenceReplayElement):
         # computes the target value for single sample
-        target_support = sample.reward + (1 - sample.is_terminal) * (self.gamma**self.update_horizon) * self.support
+        target_support = (
+            sample.reward + (1 - sample.is_terminal) * (self.current_gamma**self.current_update_horizon) * self.support
+        )
         target_logits = self.network.apply(params, sample.next_state)
         target_prob = jax.nn.softmax(target_logits[jnp.argmax(jax.nn.softmax(target_logits) @ self.support)])
         return target_support, target_prob
