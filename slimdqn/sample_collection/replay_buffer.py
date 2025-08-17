@@ -125,8 +125,9 @@ class ReplayBuffer:
             batch_indices.append(index)
             batch.append(sample)
 
+        batch_indices = jnp.array(batch_indices)
         return jax.tree_util.tree_map(lambda *xs: np.stack(xs), *batch), {
-            "indices": jnp.array(batch_indices),
+            "indices": batch_indices,
             "probabilities": self._sampling_distribution.get_probabilities(batch_indices),
         }
 

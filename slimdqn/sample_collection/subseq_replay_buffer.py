@@ -1,9 +1,6 @@
 # Inspired by dopamine implementation: https://github.com/google/dopamine/blob/master/dopamine/jax/replay_memory/replay_buffer.py
 """Simpler implementation of the subsequence replay memory (SPR style)."""
-import jax
 import numpy as np
-import jax.numpy as jnp
-
 from flax import struct
 
 from slimdqn.sample_collection.replay_buffer import *
