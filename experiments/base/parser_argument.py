@@ -53,7 +53,7 @@ def add_base_arguments(parser: argparse.ArgumentParser):
         nargs="*",
         help="List of features for the Q-networks.",
         type=int,
-        default=[200, 200],
+        default=[16, 32, 32, 512],
     )
     parser.add_argument(
         "-rbc",
@@ -96,14 +96,6 @@ def add_base_arguments(parser: argparse.ArgumentParser):
         help="Horizon for truncation.",
         type=int,
         default=1000,
-    )
-    parser.add_argument(
-        "-at",
-        "--architecture_type",
-        help="Type of architecture.",
-        type=str,
-        default="fc",
-        choices=["cnn", "der", "impala", "fc"],
     )
     parser.add_argument(
         "-ne",

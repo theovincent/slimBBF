@@ -6,7 +6,7 @@ import numpy as np
 import optax
 from flax.core import FrozenDict
 
-from slimdqn.networks.architectures.dqn import SPRNet
+from slimdqn.networks.architectures.bbf import SPRNet
 from slimdqn.networks.architectures.utils import (
     copy_params,
     interpolate_weights,

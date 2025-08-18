@@ -51,16 +51,6 @@ def normalize_and_augment(x, rng=None):
     return out
 
 
-def max_min_normalize(tensor, has_batch=False):
-    shape = tensor.shape
-    if not has_batch:
-        tensor = jnp.expand_dims(tensor, 0)
-    tensor = tensor.reshape(tensor.shape[0], -1)
-    max_value = jnp.max(tensor, axis=-1, keepdims=True)
-    min_value = jnp.min(tensor, axis=-1, keepdims=True)
-    return ((tensor - min_value) / (max_value - min_value + 1e-5)).reshape(*shape)
-
-
 def copy_params(source, target, keys):
     """Copies a set of keys from source to target."""
     if isinstance(source, dict) or isinstance(source, collections.OrderedDict) or isinstance(source, FrozenDict):
