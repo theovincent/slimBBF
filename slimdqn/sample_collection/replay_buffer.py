@@ -126,10 +126,11 @@ class ReplayBuffer:
             batch.append(sample)
 
         batch_indices = jnp.array(batch_indices)
-        return jax.tree_util.tree_map(lambda *xs: np.stack(xs), *batch), {
-            "indices": batch_indices,
-            "probabilities": self._sampling_distribution.get_probabilities(batch_indices),
-        }
+        return (
+            jax.tree_util.tree_map(lambda *xs: np.stack(xs), *batch),
+            batch_indices,
+            self._sampling_distribution.get_probabilities(batch_indices),
+        )
 
     def update(self, metadata):  # using with UniformSamplingDistribution gives error
         self._sampling_distribution.update(metadata)
