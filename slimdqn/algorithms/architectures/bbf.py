@@ -68,12 +68,14 @@ class MultiStepTransitionModel(nn.Module):
 
     @nn.compact
     def __call__(self, latent, actions):
-        scan = nn.scan(TransitionModel, variable_broadcast=["params"])(self.n_actions, self.latent_dim)
+        scan = nn.scan(TransitionModel, variable_broadcast=["params"], split_rngs={"params": False})(
+            self.n_actions, self.latent_dim
+        )
         # only return the sequence of latents
         return scan(latent, actions)[1]
 
 
-class SPRNet(nn.Module):
+class BBFNet(nn.Module):
     features: Sequence[int]
     n_actions: int
     n_bins: int
@@ -84,31 +86,32 @@ class SPRNet(nn.Module):
         self.projector = nn.Dense(self.features[3], kernel_init=nn.initializers.xavier_uniform())
         self.predictor = nn.Dense(self.features[3], kernel_init=nn.initializers.xavier_uniform())
         self.q_logits_head = nn.Dense(self.n_actions * self.n_bins, kernel_init=nn.initializers.xavier_uniform())
+        self.bins = jnp.linspace(start=-10, stop=10, num=self.n_bins)
 
     def spr_rollout(self, latent, actions):
+        # Only works for a single state
+        # shape (window_size, height, width, n_channels)
         pred_latents = self.transition_model(latent, actions)
-        representations = pred_latents.reshape(pred_latents.shape[0], -1)
-        projected_representations = jax.vmap(self.projector)(representations)
-        predictions = jax.vmap(self.predictor)(projected_representations)
-        return predictions
+        # shape (window_size, latent_dimension)
+        projected_representations = self.projector(pred_latents.reshape(pred_latents.shape[0], -1))
+        return self.predictor(projected_representations)
 
-    def encode_project(self, x):
-        representation = max_min_normalize(self.encoder(x))
-        representation = representation.reshape(representation.shape[0], -1)
-        return self.projector(representation)
+    def encode_and_project(self, state):
+        # Only works for a single state
+        representation = max_min_normalize(self.encoder(state))
+        return self.projector(representation.reshape(-1))
 
     @nn.compact
-    def __call__(self, x, actions=None):
-        # Normalize input?
-        spatial_latent = max_min_normalize(self.encoder(x))
-        representation = spatial_latent.reshape(-1)
-        x = nn.relu(self.projector(representation))
-
-        x = x[0] if x.ndim > 1 else x
+    def __call__(self, state, actions=None):
+        # Only works for a single state
+        spatial_latent = max_min_normalize(self.encoder(state))
+        x = self.projector(spatial_latent.reshape(-1))
+        x = nn.relu(x)
         q_logits = self.q_logits_head(x).reshape((self.n_actions, self.n_bins))
 
         if actions is None:
-            return q_logits
-
-        spr_predictions = self.spr_rollout(spatial_latent, actions)
-        return q_logits, spr_predictions
+            # shape (n_actions, n_bins)
+            return nn.softmax(q_logits)
+        else:
+            # shape (n_bins) | (horizon, latent_dimension)
+            return nn.softmax(q_logits)[actions[0]], self.spr_rollout(spatial_latent, actions)
