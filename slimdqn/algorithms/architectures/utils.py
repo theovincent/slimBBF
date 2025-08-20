@@ -31,3 +31,8 @@ def exponential_scheduler(decay_period, initial_value, final_value):
         if step <= decay_period
         else final_value
     )
+
+
+def reverse_exponential_scheduler(decay_period, initial_value, final_value):
+    schedule = exponential_scheduler(decay_period, 1 - initial_value, 1 - final_value)
+    return lambda step: 1 - schedule(step)

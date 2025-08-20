@@ -11,7 +11,7 @@ import cv2
 
 
 class AtariEnv:
-    def __init__(self, name: str, sticky_actions=True) -> None:
+    def __init__(self, name: str, sticky_actions: bool) -> None:
         self.name = name
         self.state_height, self.state_width = (84, 84)
         self.n_stacked_frames = 4
@@ -24,9 +24,6 @@ class AtariEnv:
             frameskip=1,
             repeat_action_probability=0.25 if sticky_actions else 0.0,
             max_num_frames_per_episode=100_000,
-            continuous=False,
-            continuous_action_threshold=0.0,
-            render_mode=None,
         ).env
 
         self.n_actions = self.env.action_space.n
@@ -48,6 +45,7 @@ class AtariEnv:
         self.env.reset()
 
         self.n_steps = 0
+        self.n_lives = self.environment.ale.lives()  # to terminate on loss life
 
         self.env.env.ale.getScreenGrayscale(self.screen_buffer[0])
         self.screen_buffer[1].fill(0)
@@ -55,11 +53,16 @@ class AtariEnv:
         self.state_ = np.zeros((self.state_height, self.state_width, self.n_stacked_frames), dtype=np.uint8)
         self.state_[:, :, -1] = self.resize()
 
+        ADD NO OP ACTIONS!!!
+
     def step(self, action: jnp.int8) -> Tuple[float, bool]:
         reward = 0
 
         for idx_frame in range(self.n_skipped_frames):
-            _, reward_, terminal, _, _ = self.env.step(action)
+            _, reward_, terminal_, _, _ = self.env.step(action)
+
+            # terminate on loss life
+            terminal = terminal_ or self.environment.ale.lives() < self.n_lives
 
             reward += reward_
 

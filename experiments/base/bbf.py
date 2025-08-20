@@ -1,74 +1,47 @@
 import jax
 import numpy as np
 import optax
-from tqdm import tqdm
+from tqdm import trange
 
 from experiments.base.utils import save_data
-from slimdqn.networks.bbf import BBF
+from slimdqn.algorithms.bbf import BBF
 from slimdqn.sample_collection.subseq_replay_buffer import SubsequenceReplayBuffer
 from slimdqn.sample_collection.utils import collect_single_sample
 
 
-def train(
-    key: jax.random.PRNGKey,
-    p: dict,
-    agent: BBF,
-    env,
-    rb: SubsequenceReplayBuffer,
-):
-    epsilon_schedule = optax.linear_schedule(1.0, p["epsilon_end"], p["epsilon_duration"])
-
-    n_training_steps = 0
+def train(key: jax.Array, p: dict, agent: BBF, env, rb: SubsequenceReplayBuffer):
+    epsilon_schedule = optax.linear_schedule(1.0, p["epsilon_end"], p["epsilon_duration"], p["n_initial_samples"])
     env.reset()
-    episode_returns_per_epoch = [[0]]
-    episode_lengths_per_epoch = [[0]]
+    episode_returns = [0]
+    episode_lengths = [0]
 
-    for idx_epoch in tqdm(range(p["n_epochs"])):
-        n_training_steps_epoch = 0
-        has_reset = False
+    for n_sampling_steps in trange(1, p["n_sampling_steps"] + 1, miniters=10000, maxinterval=1000):
+        key, explore_key = jax.random.split(key)
+        reward, has_reset = collect_single_sample(explore_key, env, agent, rb, p, epsilon_schedule, n_sampling_steps)
 
-        while n_training_steps_epoch < p["n_training_steps_per_epoch"] or not has_reset:
-            key, exploration_key = jax.random.split(key)
-            reward, has_reset = collect_single_sample(
-                exploration_key, env, agent, rb, p, epsilon_schedule, n_training_steps, p["target_for_action_selection"]
+        episode_returns[-1] += reward
+        episode_lengths[-1] += 1
+        if has_reset:
+            print(
+                f"\{n_sampling_steps} sampling steps: Return {episode_returns[-1]} after {episode_lengths[-1]} steps.\n",
+                flush=True,
             )
+            p["wandb"].log(
+                {
+                    "n_sampling_steps": n_sampling_steps,
+                    "performances/avg_return": episode_returns[-1],
+                    "performances/avg_length_episode": episode_lengths[-1],
+                    **agent.get_logs(),
+                }
+            )
+            episode_returns.append(0)
+            episode_lengths.append(0)
 
-            n_training_steps_epoch += 1
-            n_training_steps += 1
+        if n_sampling_steps >= p["n_initial_samples"]:
+            for _ in range(p["update_to_data"]):
+                agent.update_online_params(rb)
+                # avoid resetting on last iteration
+                agent.reset_params(n_sampling_steps if n_sampling_steps < p["n_sampling_steps"] else 1)
 
-            episode_returns_per_epoch[idx_epoch][-1] += reward
-            episode_lengths_per_epoch[idx_epoch][-1] += 1
-            if has_reset and n_training_steps_epoch < p["n_training_steps_per_epoch"]:
-                episode_returns_per_epoch[idx_epoch].append(0)
-                episode_lengths_per_epoch[idx_epoch].append(0)
-
-            if n_training_steps > p["n_initial_samples"]:
-                agent.update_online_params(n_training_steps, rb)
-                target_updated, logs = agent.update_target_params(n_training_steps)
-
-                if target_updated:
-                    p["wandb"].log({"n_training_steps": n_training_steps, **logs})
-
-            if (
-                p["no_resets_after_step"] - n_training_steps >= agent.reset_frequency
-            ):  # not to reset if < reset_frequency steps left before no_resets_after_step
-                agent.reset_network_params(n_training_steps)
-
-        avg_return = np.mean(episode_returns_per_epoch[idx_epoch])
-        avg_length_episode = np.mean(episode_lengths_per_epoch[idx_epoch])
-        n_episodes = len(episode_lengths_per_epoch[idx_epoch])
-        print(f"\nEpoch {idx_epoch}: Return {avg_return} averaged on {n_episodes} episodes.\n", flush=True)
-        p["wandb"].log(
-            {
-                "epoch": idx_epoch,
-                "n_training_steps": n_training_steps,
-                "avg_return": avg_return,
-                "avg_length_episode": avg_length_episode,
-            }
-        )
-
-        if idx_epoch < p["n_epochs"] - 1:
-            episode_returns_per_epoch.append([0])
-            episode_lengths_per_epoch.append([0])
-
-        save_data(p, episode_returns_per_epoch, episode_lengths_per_epoch, agent.get_model())
+        save_data(p, episode_returns, episode_lengths, agent.get_model())
+        EVALUATE THE MODEL WITH 100 EPISODES!!! 

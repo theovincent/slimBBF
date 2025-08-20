@@ -7,7 +7,7 @@ import numpy as np
 from experiments.base.bbf import train
 from experiments.base.utils import prepare_logs
 from slimdqn.environments.atari import AtariEnv
-from slimdqn.networks.bbf import BBF
+from slimdqn.algorithms.bbf import BBF
 from slimdqn.sample_collection.subseq_replay_buffer import SubsequenceReplayBuffer
 from slimdqn.sample_collection.samplers import PrioritizedSamplingDistribution
 
@@ -39,20 +39,12 @@ def run(argvs=sys.argv[1:]):
         features=p["features"],
         learning_rate=p["learning_rate"],
         min_gamma=p["min_gamma"],
-        gamma=p["gamma"],
-        update_horizon=p["update_horizon"],
+        max_gamma=p["max_gamma"],
+        min_update_horizon=p["min_update_horizon"],
         max_update_horizon=p["max_update_horizon"],
-        horizon_cycle_steps=p["horizon_cycle_steps"],
-        update_to_data=p["update_to_data"],
-        target_update_tau=p["target_update_tau"],
+        gamma_horizon_decay_steps=p["gamma_horizon_decay_steps"],
+        tau=p["tau"],
         reset_frequency=p["reset_frequency"],
-        shrink_factor=p["shrink_factor"],
-        perturb_factor=p["perturb_factor"],
-        min_value=p["min_value"],
-        max_value=p["max_value"],
-        spr_weight=p["spr_weight"],
-        adam_eps=1.5e-4,
-        adam_weight_decay=0.1,
     )
     train(train_key, p, agent, env, rb)
 

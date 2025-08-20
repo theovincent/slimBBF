@@ -2,11 +2,16 @@ from functools import partial
 from dataclasses import replace
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
 from flax.core import FrozenDict
 
 from slimdqn.algorithms.architectures.bbf import BBFNet
-from slimdqn.algorithms.architectures.utils import exponential_scheduler, normalize_and_augment
+from slimdqn.algorithms.architectures.utils import (
+    exponential_scheduler,
+    reverse_exponential_scheduler,
+    normalize_and_augment,
+)
 from slimdqn.sample_collection.subseq_replay_buffer import SubsequenceReplayBuffer, SubsequenceReplayElement
 
 
@@ -26,8 +31,6 @@ class BBF:
         gamma_horizon_decay_steps: int,
         tau: float,
         reset_frequency: int,
-        shrink_factor: float,
-        perturb_factor: float,
         spr_steps: int,
     ):
         self.observation_dim = observation_dim
@@ -49,19 +52,17 @@ class BBF:
         self.target_params = self.params.copy()
 
         self.update_horizon_schedule = exponential_scheduler(
-            gamma_horizon_decay_steps, min_update_horizon, max_update_horizon
+            gamma_horizon_decay_steps, max_update_horizon, min_update_horizon
         )
-        self.gamma_schedule = exponential_scheduler(gamma_horizon_decay_steps, min_gamma, max_gamma)
-        self.steps_after_reset = 0  # to track number of grad steps for schedulers
+        self.gamma_schedule = reverse_exponential_scheduler(gamma_horizon_decay_steps, min_gamma, max_gamma)
         self.tau = tau
+        self.steps_after_reset = 0  # to track number of grad steps for schedulers
         self.reset_frequency = reset_frequency
-        self.shrink_factor = shrink_factor
-        self.perturb_factor = perturb_factor
         self.cumulated_td_loss = 0
         self.cumulated_spr_loss = 0
 
     def update_online_params(self, replay_buffer: SubsequenceReplayBuffer):
-        update_horizon = int(self.update_horizon_schedule(self.steps_after_reset))
+        update_horizon = int(np.round(self.update_horizon_schedule(self.steps_after_reset)))
         gamma = self.gamma_schedule(self.steps_after_reset)
         samples, indices, importance_weights = replay_buffer.sample(n=update_horizon, gamma=gamma)
         self.key, key = jax.random.split(self.key)
@@ -81,8 +82,8 @@ class BBF:
         self.cumulated_spr_loss = (1 - self.tau) * self.cumulated_spr_loss + self.tau * spr_loss
         self.steps_after_reset += 1
 
-    def reset_params(self, step: int):
-        if step % self.reset_frequency == 0:
+    def reset_params(self, n_sampling_steps: int):
+        if n_sampling_steps % self.reset_frequency == 0:
             self.key, key = jax.random.split(self.key)
             self.params, self.target_params, self.optimizer_state = self.apply_reset_params(
                 self.params, self.target_params, self.optimizer_state, key
@@ -204,6 +205,9 @@ class BBF:
     def best_action(self, params: FrozenDict, state: jnp.ndarray):
         normalized_state = state.astype(jnp.float32) / 255.0
         return jnp.argmax(self.network.apply(params, normalized_state) @ self.network.bins)
+
+    def get_logs(self):
+        return {"train/td_loss": self.cumulated_td_loss, "train/spr_loss": self.cumulated_spr_loss}
 
     def get_model(self):
         return {"params": self.params}

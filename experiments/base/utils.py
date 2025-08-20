@@ -5,6 +5,7 @@ import pickle
 import time
 from typing import List
 import wandb
+import numpy as np
 
 from experiments.base import parser_argument
 
@@ -39,6 +40,10 @@ def prepare_logs(env_name: str, algo_name: str, argvs: List[str]):
         mode="online" if not p["disable_wandb"] else "disabled",
         settings=wandb.Settings(_disable_stats=True),
     )
+
+    # Fix the seed
+    os.environ["PYTHONHASHSEED"] = str(p["seed"])
+    np.random.seed(p["seed"])
 
     return p
 
