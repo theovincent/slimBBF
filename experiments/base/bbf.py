@@ -1,5 +1,4 @@
 import jax
-import numpy as np
 import optax
 from tqdm import trange
 
@@ -40,8 +39,8 @@ def train(key: jax.Array, p: dict, agent: BBF, env, rb: SubsequenceReplayBuffer)
         if n_sampling_steps >= p["n_initial_samples"]:
             for _ in range(p["update_to_data"]):
                 agent.update_online_params(rb)
-                # avoid resetting on last iteration
-                agent.reset_params(n_sampling_steps if n_sampling_steps < p["n_sampling_steps"] else 1)
+            # avoid resetting on last iteration
+            agent.reset_params(n_sampling_steps if n_sampling_steps < p["n_sampling_steps"] else 1)
 
         save_data(p, episode_returns, episode_lengths, agent.get_model())
         EVALUATE THE MODEL WITH 100 EPISODES!!! 
