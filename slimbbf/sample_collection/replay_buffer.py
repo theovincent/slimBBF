@@ -1,27 +1,16 @@
 # Inspired by dopamine implementation: https://github.com/google/dopamine/blob/master/dopamine/jax/replay_memory/replay_buffer.py
-"""Simpler implementation of the standard DQN replay memory (supports Uniform and PER sampler)."""
 import jax
 import numpy as np
 import jax.numpy as jnp
-
 from flax import struct
 
-
-def mod(x: int, N: int):
-    return x % N
+from slimbbf.sample_collection import sum_tree
 
 
-def index_range(a: int, b: int, N: int):
-    a = mod(a, N)
-    b = mod(b, N)
-    if a <= b:
-        return np.arange(a, b + 1)
-    return np.concat([np.arange(a, N), np.arange(b + 1)])
-
-
-def compute_first_true_index(array, indices):
-    all_indices = np.where(array[indices] > 0)[0]
-    return indices[all_indices[0]] if len(all_indices) > 0 else None
+def mod_index_range(i: int, j: int, N: int):
+    i_mod = i % N
+    j_mod = j % N
+    return np.arange(i_mod, j_mod + 1) if i_mod <= j_mod else np.concat([np.arange(i_mod, N), np.arange(j_mod + 1)])
 
 
 class ReplayElement(struct.PyTreeNode):
@@ -33,150 +22,144 @@ class ReplayElement(struct.PyTreeNode):
 
 
 class ReplayBuffer:
-
     def __init__(
         self,
-        sampling_distribution,
         max_capacity: int,
+        seed: int,
         batch_size: int,
         observation_shape: tuple,
         observation_dtype,
-        stack_size: int = 4,
-        update_horizon: int = 1,
-        gamma: float = 0.99,
-        clipping: callable = None,
-        max_sample_trials=1000,
+        stack_size: int,
+        clipping: callable,
     ):
-        assert max_capacity >= stack_size, "Need at least stack_size capacity in replay buffer"
         self._max_capacity = max_capacity
-        self._observation_shape = observation_shape
+        self._rng_key = np.random.default_rng(seed)
+
         self._observation_stack = np.zeros((max_capacity,) + observation_shape, dtype=observation_dtype)
-        self._action_stack = np.zeros((max_capacity,), dtype=np.uint32)
+        self._action_stack = np.zeros((max_capacity,), dtype=np.uint)
         self._reward_stack = np.zeros((max_capacity,), dtype=np.float32)
         self._is_terminal_stack = np.ones((max_capacity,), dtype=np.uint8)
         self._is_truncation_stack = np.ones((max_capacity,), dtype=np.uint8)
+
+        self._batch_size = batch_size
+        self._stack_size = stack_size
+        self._clipping = clipping
+
+        self._sum_tree = sum_tree.SumTree(max_capacity)
+
+        # Fill initial zero frames
         self._is_terminal_stack[:stack_size] = 0
         self._is_truncation_stack[:stack_size] = 0
         self.add_count = stack_size - 1
-
-        self._sampling_distribution = sampling_distribution
-        self._batch_size = batch_size
-
-        self._stack_size = stack_size
-        self._update_horizon = update_horizon
-        self._gamma = gamma
-        self._clipping = clipping
-        self._max_sample_trials = max_sample_trials
-
-        self._last_is_truncation = True
+        self._last_obs_is_truncation = True
 
     def add(self, observation, action, reward, is_terminal, is_truncation) -> None:
-        self._observation_stack[mod(self.add_count, self._max_capacity)] = observation
-        self._action_stack[mod(self.add_count, self._max_capacity)] = action
-        self._reward_stack[mod(self.add_count, self._max_capacity)] = reward
-        self._is_terminal_stack[mod(self.add_count, self._max_capacity)] = is_terminal
-        self._is_truncation_stack[mod(self.add_count, self._max_capacity)] = (
-            False if is_terminal else True
-        )  # we technically truncate if stop the run here
-        if not self._last_is_truncation:
-            self._is_truncation_stack[mod(self.add_count - 1, self._max_capacity)] = False
+        add_index = self.add_count % self._max_capacity
+        self._observation_stack[add_index] = observation
+        self._action_stack[add_index] = action
+        self._reward_stack[add_index] = reward
+        self._is_terminal_stack[add_index] = is_terminal
+        # We technically truncate if the run stops with this observation
+        self._is_truncation_stack[add_index] = False if is_terminal else True
 
-        self._last_is_truncation = is_truncation
-        self._sampling_distribution.add(mod(self.add_count, self._max_capacity))
+        # Update the truncation flag for last frame if trajectory did not truncate
+        if not self._last_obs_is_truncation:
+            self._is_truncation_stack[(self.add_count - 1) % self._max_capacity] = False
+        self._last_obs_is_truncation = is_truncation
+
         self.add_count += 1
-        if (is_terminal or is_truncation) and self._stack_size > 1:  # to fill zeroed frames
-            self._observation_stack[
-                index_range(self.add_count, self.add_count + self._stack_size - 2, self._max_capacity)
-            ] = 0
-            self._action_stack[
-                index_range(self.add_count, self.add_count + self._stack_size - 2, self._max_capacity)
-            ] = 0
-            self._reward_stack[
-                index_range(self.add_count, self.add_count + self._stack_size - 2, self._max_capacity)
-            ] = 0
-            self._is_terminal_stack[
-                index_range(self.add_count, self.add_count + self._stack_size - 2, self._max_capacity)
-            ] = 0
-            self._is_truncation_stack[
-                index_range(self.add_count, self.add_count + self._stack_size - 2, self._max_capacity)
-            ] = 0
+
+        # Fill zeroed frames in case of end of trajectory
+        if (is_terminal or is_truncation) and self._stack_size > 1:
+            zeroed_indices = mod_index_range(self.add_count, self.add_count + self._stack_size - 2, self._max_capacity)
+            self._observation_stack[zeroed_indices] = 0
+            self._action_stack[zeroed_indices] = 0
+            self._reward_stack[zeroed_indices] = 0
+            self._is_terminal_stack[zeroed_indices] = 0
+            self._is_truncation_stack[zeroed_indices] = 0
             self.add_count += self._stack_size - 1
 
-    def sample(self, batch_size=None, n=None, gamma=None):
-        if batch_size is None:
-            batch_size = self._batch_size
-        if n is None:
-            n = self._update_horizon
-        if gamma is None:
-            gamma = self._gamma
+        self._sum_tree.set(add_index, self._sum_tree.max_recorded_priority)
 
+    def sample(self, n, gamma):
         batch = []
         batch_indices = []
-        indices = self._sampling_distribution.sample(size=batch_size)
-        for index in indices:
+
+        initial_indices = self._sum_tree.query(self._rng_key.uniform(0.0, self._sum_tree.root, size=self._batch_size))
+        for index in initial_indices:
             n_sample_trials = 1
             sample = self._check_valid_and_get_sample(index, n, gamma)
-            while (not sample) and n_sample_trials < self._max_sample_trials:
-                index = self._sampling_distribution.sample(size=1)[0]
+
+            # Check if sample is not None until valid sample or 1000 trial limit
+            while sample is None and n_sample_trials < 1000:
+                index = self._sum_tree.query(self._rng_key.uniform(0.0, self._sum_tree.root, size=1))[0]
                 n_sample_trials += 1
                 sample = self._check_valid_and_get_sample(index, n, gamma)
 
-            assert sample, "Could not construct a valid batch"
+            assert sample, "Could not construct a valid batch"  # error if sample not obtained after all trials
+
             batch_indices.append(index)
             batch.append(sample)
 
         batch_indices = jnp.array(batch_indices)
-        return (
-            jax.tree_util.tree_map(lambda *xs: np.stack(xs), *batch),
-            batch_indices,
-            self._sampling_distribution.get_probabilities(batch_indices),
-        )
 
-    def update(self, metadata):  # using with UniformSamplingDistribution gives error
-        self._sampling_distribution.update(metadata)
+        batch_probabilities = self._sum_tree.get(batch_indices) / self._sum_tree.root
+        batch_importance_weights = 1.0 / jnp.sqrt(batch_probabilities + 1e-10)  # beta = 0.5
+        batch_importance_weights /= jnp.max(batch_importance_weights)
+
+        return jax.tree_util.tree_map(lambda *xs: np.stack(xs), *batch), batch_indices, batch_importance_weights
 
     def _check_valid_and_get_sample(self, index, n, gamma):
+
+        state_stack_indices_except_last = mod_index_range(index - self._stack_size + 1, index - 1, self._max_capacity)
         is_state_invalid = self._stack_size > 1 and (
-            np.any(self._is_terminal_stack[index_range(index - self._stack_size + 1, index - 1, self._max_capacity)])
-            or np.any(self._is_truncation_stack[index_range(index - self._stack_size + 1, index, self._max_capacity)])
+            np.any(self._is_terminal_stack[state_stack_indices_except_last])
+            or np.any(self._is_truncation_stack[state_stack_indices_except_last])
         )
 
-        first_terminal_index = compute_first_true_index(
-            self._is_terminal_stack, index_range(index, index + n - 1, self._max_capacity)
-        )
+        indices_upto_next_state = mod_index_range(index, index + n - 1, self._max_capacity)
+
+        # Find the first index in indices_upto_next_state where terminal/truncation is true
+        terminal_indices_true = np.where(self._is_terminal_stack[indices_upto_next_state] > 0)[0]
         first_terminal_index = (
-            mod(first_terminal_index, self._max_capacity) if first_terminal_index is not None else None
-        )
-        first_truncation_index = compute_first_true_index(
-            self._is_truncation_stack, index_range(index, index + n - 1, self._max_capacity)
-        )
-        first_truncation_index = (
-            mod(first_truncation_index, self._max_capacity) if first_truncation_index is not None else None
+            indices_upto_next_state[terminal_indices_true[0]] if len(terminal_indices_true) > 0 else -1
         )
 
-        is_next_state_valid = (first_truncation_index is None) or (
-            first_truncation_index is not None
-            and first_terminal_index is not None
+        truncation_indices_true = np.where(self._is_truncation_stack[indices_upto_next_state] > 0)[0]
+        first_truncation_index = (
+            indices_upto_next_state[truncation_indices_true[0]] if len(truncation_indices_true) > 0 else -1
+        )
+
+        # s' can be created if there is no truncation, or termination (s' not needed) before truncation
+        is_next_state_valid = (first_truncation_index == -1) or (
+            first_truncation_index != -1
+            and first_terminal_index != -1
             and first_terminal_index <= first_truncation_index
         )
 
-        if (not is_state_invalid) and is_next_state_valid:
+        if not is_state_invalid and is_next_state_valid:
             return self._construct_batch_sample(index, first_terminal_index, n, gamma)
         return None
 
     def _construct_batch_sample(self, index, first_terminal_index, n, gamma):
+        # Get frames of state of shape (stack_size, H, W) from observation_stack and change to (H, W, stack_size)
         state = np.moveaxis(
-            self._observation_stack[index_range(index - self._stack_size + 1, index, self._max_capacity)], 0, -1
+            self._observation_stack[mod_index_range(index - self._stack_size + 1, index, self._max_capacity)], 0, -1
         )
-        action = self._action_stack[index]
-        is_terminal = first_terminal_index is not None
-        reward = self._reward_stack[
-            index_range(index, first_terminal_index if is_terminal else index + n - 1, self._max_capacity)
-        ]
 
-        reward = np.dot(reward, np.power(gamma, np.arange(len(reward))))
-        next_state = np.moveaxis(
-            self._observation_stack[index_range(index + n - self._stack_size + 1, index + n, self._max_capacity)], 0, -1
-        )
+        action = self._action_stack[index]
+        is_terminal = first_terminal_index != -1
+
+        reward_terms = self._reward_stack[
+            mod_index_range(index, first_terminal_index if is_terminal else index + n - 1, self._max_capacity)
+        ]
+        reward = np.dot(reward_terms, np.power(gamma, np.arange(len(reward_terms))))
+
+        # Get frames of next state of shape (stack_size, H, W) from observation_stack and change to (H, W, stack_size)
+        next_state_index_range = mod_index_range(index + n - self._stack_size + 1, index + n, self._max_capacity)
+        next_state = np.moveaxis(self._observation_stack[next_state_index_range], 0, -1)
 
         return ReplayElement(state, action, reward, next_state, is_terminal)
+
+    def update(self, indices, loss):
+        self._sum_tree.set(indices, np.pow(loss, 0.5))  # Set alpha = 0 for uniform RB
