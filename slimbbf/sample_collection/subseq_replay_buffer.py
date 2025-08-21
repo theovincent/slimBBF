@@ -3,7 +3,7 @@
 import numpy as np
 from flax import struct
 
-from slimdqn.sample_collection.replay_buffer import *
+from slimbbf.sample_collection.replay_buffer import *
 
 
 class SubsequenceReplayElement(struct.PyTreeNode):

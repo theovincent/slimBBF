@@ -33,7 +33,7 @@ def prepare_logs(env_name: str, algo_name: str, argvs: List[str]):
     store_params(p, shared_params, agent_params)
 
     p["wandb"] = wandb.init(
-        project="slimdqn",
+        project="slimbbf",
         config=p,
         name=str(p["seed"]),
         group=f"{p['algo_name']}_{p['experiment_name']}",

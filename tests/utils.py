@@ -3,8 +3,8 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 
-from slimdqn.sample_collection.replay_buffer import ReplayElement
-from slimdqn.sample_collection.subseq_replay_buffer import SubsequenceReplayElement
+from slimbbf.sample_collection.replay_buffer import ReplayElement
+from slimbbf.sample_collection.subseq_replay_buffer import SubsequenceReplayElement
 
 
 class Generator:

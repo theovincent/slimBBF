@@ -6,10 +6,10 @@ import numpy as np
 
 from experiments.base.bbf import train
 from experiments.base.utils import prepare_logs
-from slimdqn.environments.atari import AtariEnv
-from slimdqn.algorithms.bbf import BBF
-from slimdqn.sample_collection.subseq_replay_buffer import SubsequenceReplayBuffer
-from slimdqn.sample_collection.samplers import PrioritizedSamplingDistribution
+from slimbbf.environments.atari import AtariEnv
+from slimbbf.algorithms.bbf import BBF
+from slimbbf.sample_collection.subseq_replay_buffer import SubsequenceReplayBuffer
+from slimbbf.sample_collection.samplers import PrioritizedSamplingDistribution
 
 
 def run(argvs=sys.argv[1:]):

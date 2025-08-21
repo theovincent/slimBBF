@@ -3,7 +3,7 @@
 
 from absl.testing import absltest
 from absl.testing import parameterized
-from slimdqn.sample_collection import sum_tree
+from slimbbf.sample_collection import sum_tree
 import numpy as np
 
 

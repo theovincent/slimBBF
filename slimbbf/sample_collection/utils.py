@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 from functools import partial
 
-from slimdqn.sample_collection.replay_buffer import ReplayBuffer
+from slimbbf.sample_collection.replay_buffer import ReplayBuffer
 
 
 @partial(jax.jit, static_argnames=("best_action_fn", "n_actions", "epsilon_fn"))

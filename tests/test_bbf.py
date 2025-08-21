@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import optax
 
-from slimdqn.networks.bbf import BBF
+from slimbbf.algorithms.bbf import BBF
 from tests.utils import Generator
 
 #     key: Any,

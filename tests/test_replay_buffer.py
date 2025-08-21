@@ -4,8 +4,8 @@ from absl.testing import absltest
 from absl.testing import parameterized
 import numpy as np
 
-from slimdqn.sample_collection.replay_buffer import ReplayBuffer
-from slimdqn.sample_collection import samplers
+from slimbbf.sample_collection.replay_buffer import ReplayBuffer
+from slimbbf.sample_collection import samplers
 
 
 # Default parameters used when creating the replay memory - mimic Atari.

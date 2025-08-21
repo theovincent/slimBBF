@@ -3,7 +3,7 @@
 
 from absl.testing import absltest
 from absl.testing import parameterized
-from slimdqn.sample_collection import samplers
+from slimbbf.sample_collection import samplers
 import numpy as np
 
 

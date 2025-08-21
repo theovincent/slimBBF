@@ -3,7 +3,7 @@
 
 import numpy as np
 
-from slimdqn.sample_collection import sum_tree
+from slimbbf.sample_collection import sum_tree
 
 
 class UniformSamplingDistribution:

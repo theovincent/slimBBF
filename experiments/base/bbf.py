@@ -4,9 +4,9 @@ import optax
 from tqdm import trange
 
 from experiments.base.utils import save_data
-from slimdqn.algorithms.bbf import BBF
-from slimdqn.sample_collection.subseq_replay_buffer import SubsequenceReplayBuffer
-from slimdqn.sample_collection.utils import collect_single_sample
+from slimbbf.algorithms.bbf import BBF
+from slimbbf.sample_collection.subseq_replay_buffer import SubsequenceReplayBuffer
+from slimbbf.sample_collection.utils import collect_single_sample
 
 
 def train(key: jax.Array, p: dict, agent: BBF, env, rb: SubsequenceReplayBuffer):

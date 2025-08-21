@@ -6,13 +6,13 @@ import numpy as np
 import optax
 from flax.core import FrozenDict
 
-from slimdqn.algorithms.architectures.bbf import BBFNet
-from slimdqn.algorithms.architectures.utils import (
+from slimbbf.algorithms.architectures.bbf import BBFNet
+from slimbbf.algorithms.architectures.utils import (
     exponential_scheduler,
     reverse_exponential_scheduler,
     normalize_and_augment,
 )
-from slimdqn.sample_collection.subseq_replay_buffer import SubsequenceReplayBuffer, SubsequenceReplayElement
+from slimbbf.sample_collection.subseq_replay_buffer import SubsequenceReplayBuffer, SubsequenceReplayElement
 
 
 class BBF:
