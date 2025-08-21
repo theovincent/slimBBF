@@ -53,8 +53,6 @@ class AtariEnv:
         self.state_ = np.zeros((self.state_height, self.state_width, self.n_stacked_frames), dtype=np.uint8)
         self.state_[:, :, -1] = self.resize()
 
-        ADD NO OP ACTIONS!!!
-
     def step(self, action: jnp.int8) -> Tuple[float, bool]:
         reward = 0
 
