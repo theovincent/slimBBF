@@ -56,14 +56,14 @@ class BBF:
         )
         self.gamma_schedule = reverse_exponential_scheduler(gamma_horizon_decay_steps, min_gamma, max_gamma)
         self.tau = tau
-        self.steps_after_reset = 0  # to track number of grad steps for schedulers
+        self.grad_steps_after_reset = 0  # to track number of grad steps for schedulers
         self.reset_frequency = reset_frequency
         self.cumulated_td_loss = 0
         self.cumulated_spr_loss = 0
 
     def update_online_params(self, replay_buffer: SubsequenceReplayBuffer):
-        update_horizon = int(np.round(self.update_horizon_schedule(self.steps_after_reset)))
-        gamma = self.gamma_schedule(self.steps_after_reset)
+        update_horizon = int(np.round(self.update_horizon_schedule(self.grad_steps_after_reset)))
+        gamma = self.gamma_schedule(self.grad_steps_after_reset)
         samples, indices, importance_weights = replay_buffer.sample(n=update_horizon, gamma=gamma)
         self.key, key = jax.random.split(self.key)
 
@@ -77,10 +77,10 @@ class BBF:
             key,
         )
 
-        replay_buffer.update(per_sample_td_loss, indices)
+        replay_buffer.update(indices, per_sample_td_loss)
         self.cumulated_td_loss = (1 - self.tau) * self.cumulated_td_loss + self.tau * per_sample_td_loss.mean()
         self.cumulated_spr_loss = (1 - self.tau) * self.cumulated_spr_loss + self.tau * spr_loss
-        self.steps_after_reset += 1
+        self.grad_steps_after_reset += 1
 
     def reset_params(self, n_sampling_steps: int):
         if n_sampling_steps % self.reset_frequency == 0:
@@ -88,7 +88,7 @@ class BBF:
             self.params, self.target_params, self.optimizer_state = self.apply_reset_params(
                 self.params, self.target_params, self.optimizer_state, key
             )
-            self.steps_after_reset = 0
+            self.grad_steps_after_reset = 0
 
     @partial(jax.jit, static_argnames="self")
     def learn_on_batch(
