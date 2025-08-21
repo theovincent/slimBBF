@@ -86,7 +86,6 @@ class BBFNet(nn.Module):
         self.projector = nn.Dense(self.features[3], kernel_init=nn.initializers.xavier_uniform())
         self.predictor = nn.Dense(self.features[3], kernel_init=nn.initializers.xavier_uniform())
         self.q_logits_head = nn.Dense(self.n_actions * self.n_bins, kernel_init=nn.initializers.xavier_uniform())
-        self.bins = jnp.linspace(start=-10, stop=10, num=self.n_bins)
 
     def spr_rollout(self, latent, actions):
         # Only works for a single state

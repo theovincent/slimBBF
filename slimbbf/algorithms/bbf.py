@@ -41,6 +41,7 @@ class BBF:
         self.params = self.network.init(
             init_key, jnp.zeros(observation_dim, dtype=jnp.float32), jnp.zeros(spr_steps, dtype=int)
         )
+        self.bins = jnp.linspace(start=-10, stop=10, num=n_bins)
 
         self.optimizer = optax.adamw(
             learning_rate,
@@ -138,7 +139,7 @@ class BBF:
         cross_entropy = importance_weight * optax.softmax_cross_entropy(q_probs, jax.lax.stop_gradient(target_probs))
 
         # shape (window_size, latent_dimension)
-        spr_targets = jax.vmap(partial(self.network.apply, method=self.network.encode_and_project), in_axis=(None, 0))(
+        spr_targets = jax.vmap(partial(self.network.apply, method=self.network.encode_and_project), in_axes=(None, 0))(
             params_target, sample.states_stack[1:]
         )
         spr_targets = spr_targets / jnp.linalg.norm(spr_targets, axis=-1, keepdims=True)
@@ -154,20 +155,20 @@ class BBF:
         # computes the target value for single sample
         # shape (n_actions, n_bins)
         target_probs_actions = self.network.apply(params, sample.next_state)
-        target_probs = target_probs[jnp.argmax(target_probs_actions @ self.network.bins)]
+        target_probs = target_probs_actions[jnp.argmax(target_probs_actions @ self.bins)]
 
         # shape (n_bins)
-        target_locations_ = sample.reward + (1 - sample.is_terminal) * discounted_gamma * self.network.bins
-        targets_locations = jnp.clip(target_locations_, self.network.bins[0], self.network.bins[-1])
+        target_locations_ = sample.reward + (1 - sample.is_terminal) * discounted_gamma * self.bins
+        targets_locations = jnp.clip(target_locations_, self.bins[0], self.bins[-1])
 
         def projection(bin_location):
             # Distance to bin location. shape (n_bins)
-            distances_to_bin = jnp.abs(targets_locations - bin_location) / (self.network.bins[1] - self.network.bins[0])
+            distances_to_bin = jnp.abs(targets_locations - bin_location) / (self.bins[1] - self.bins[0])
             # Clip the maximum distance to 1 to only consider the close target locations. shape ()
             return jnp.dot((1 - jnp.minimum(distances_to_bin, 1)), target_probs)
 
         # shape (n_bins)
-        return jax.vmap(projection)(self.network.bins)
+        return jax.vmap(projection)(self.bins)
 
     @partial(jax.jit, static_argnames="self")
     def apply_reset_params(self, params, target_params, optimizer_state, key):
@@ -204,7 +205,7 @@ class BBF:
     @partial(jax.jit, static_argnames="self")
     def best_action(self, params: FrozenDict, state: jnp.ndarray):
         normalized_state = state.astype(jnp.float32) / 255.0
-        return jnp.argmax(self.network.apply(params, normalized_state) @ self.network.bins)
+        return jnp.argmax(self.network.apply(params, normalized_state) @ self.bins)
 
     def get_logs(self):
         return {"train/td_loss": self.cumulated_td_loss, "train/spr_loss": self.cumulated_spr_loss}
