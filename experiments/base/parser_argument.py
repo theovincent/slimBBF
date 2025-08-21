@@ -53,7 +53,7 @@ def add_base_arguments(parser: argparse.ArgumentParser):
         nargs="*",
         help="List of features for the Q-networks.",
         type=int,
-        default=[16, 32, 32, 512],
+        default=[64, 128, 128, 2048],
     )
     parser.add_argument(
         "-rbc",
