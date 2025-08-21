@@ -45,6 +45,7 @@ def run(argvs=sys.argv[1:]):
         gamma_horizon_decay_steps=p["gamma_horizon_decay_steps"],
         tau=p["tau"],
         reset_frequency=p["reset_frequency"],
+        spr_steps=5,
     )
     train(train_key, p, agent, env, rb)
 
