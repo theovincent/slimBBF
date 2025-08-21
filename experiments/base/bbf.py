@@ -28,8 +28,8 @@ def train(key: jax.Array, p: dict, agent: BBF, env, rb: SubsequenceReplayBuffer)
             p["wandb"].log(
                 {
                     "n_sampling_steps": n_sampling_steps,
-                    "performances/avg_return": episode_returns[-1],
-                    "performances/avg_length_episode": episode_lengths[-1],
+                    "performances/episode_return": episode_returns[-1],
+                    "performances/episode_length": episode_lengths[-1],
                     **agent.get_logs(),
                 }
             )
