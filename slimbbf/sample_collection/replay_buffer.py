@@ -8,6 +8,7 @@ from slimbbf.sample_collection import sum_tree
 
 
 def mod_index_range(i: int, j: int, N: int):
+    # return the range [i, j] modulo N with j included
     i_mod = i % N
     j_mod = j % N
     return np.arange(i_mod, j_mod + 1) if i_mod <= j_mod else np.concat([np.arange(i_mod, N), np.arange(j_mod + 1)])
@@ -48,8 +49,8 @@ class ReplayBuffer:
         self._sum_tree = sum_tree.SumTree(max_capacity)
 
         # Fill initial zero frames
-        self._is_terminal_stack[:stack_size] = 0
-        self._is_truncation_stack[:stack_size] = 0
+        self._is_terminal_stack[: stack_size - 1] = 0
+        self._is_truncation_stack[: stack_size - 1] = 0
         self.add_count = stack_size - 1
         self._last_obs_is_truncation = True
 
@@ -59,10 +60,13 @@ class ReplayBuffer:
         self._action_stack[add_index] = action
         self._reward_stack[add_index] = reward
         self._is_terminal_stack[add_index] = is_terminal
-        # We technically truncate if the run stops with this observation
+        # Always truncate in case we are overwriting the buffer and
+        # the next observation is not belonging to the same episode
         self._is_truncation_stack[add_index] = False if is_terminal else True
 
-        # Update the truncation flag for last frame if trajectory did not truncate
+        # Update the truncation flag for the previous frame if trajectory did not truncate
+        # If the trajectory ended, self.add_count - 1 will not correspond to the accurate index,
+        # it will correspond to a black observation, which is not a truncated state so _is_truncation = False
         if not self._last_obs_is_truncation:
             self._is_truncation_stack[(self.add_count - 1) % self._max_capacity] = False
         self._last_obs_is_truncation = is_truncation
@@ -96,13 +100,12 @@ class ReplayBuffer:
                 n_sample_trials += 1
                 sample = self._check_valid_and_get_sample(index, n, gamma)
 
-            assert sample, "Could not construct a valid batch"  # error if sample not obtained after all trials
+            assert sample, f"Could not construct a valid batch after {n_sample_trials} trials"
 
             batch_indices.append(index)
             batch.append(sample)
 
         batch_indices = jnp.array(batch_indices)
-
         batch_probabilities = self._sum_tree.get(batch_indices) / self._sum_tree.root
         batch_importance_weights = 1.0 / jnp.sqrt(batch_probabilities + 1e-10)  # beta = 0.5
         batch_importance_weights /= jnp.max(batch_importance_weights)
@@ -110,45 +113,49 @@ class ReplayBuffer:
         return jax.tree_util.tree_map(lambda *xs: np.stack(xs), *batch), batch_indices, batch_importance_weights
 
     def _check_valid_and_get_sample(self, index, n, gamma):
-
+        # Is state valid?
         state_stack_indices_except_last = mod_index_range(index - self._stack_size + 1, index - 1, self._max_capacity)
         is_state_invalid = self._stack_size > 1 and (
             np.any(self._is_terminal_stack[state_stack_indices_except_last])
             or np.any(self._is_truncation_stack[state_stack_indices_except_last])
         )
 
+        # Is next state valid?
         indices_upto_next_state = mod_index_range(index, index + n - 1, self._max_capacity)
-
         # Find the first index in indices_upto_next_state where terminal/truncation is true
-        terminal_indices_true = np.where(self._is_terminal_stack[indices_upto_next_state] > 0)[0]
+        # if does not exists set it to None
+        terminal_indices_true = np.where(self._is_terminal_stack[indices_upto_next_state])[0]
         first_terminal_index = (
-            indices_upto_next_state[terminal_indices_true[0]] if len(terminal_indices_true) > 0 else -1
+            indices_upto_next_state[terminal_indices_true[0]] if len(terminal_indices_true) > 0 else None
         )
 
-        truncation_indices_true = np.where(self._is_truncation_stack[indices_upto_next_state] > 0)[0]
+        truncation_indices_true = np.where(self._is_truncation_stack[indices_upto_next_state])[0]
         first_truncation_index = (
-            indices_upto_next_state[truncation_indices_true[0]] if len(truncation_indices_true) > 0 else -1
+            indices_upto_next_state[truncation_indices_true[0]] if len(truncation_indices_true) > 0 else None
         )
 
-        # s' can be created if there is no truncation, or termination (s' not needed) before truncation
-        is_next_state_valid = (first_truncation_index == -1) or (
-            first_truncation_index != -1
-            and first_terminal_index != -1
+        # the next state can be created if there is no truncation,
+        # or if there is a termination (s' not needed) before the first truncation
+        is_next_state_valid = (first_truncation_index is None) or (
+            first_truncation_index is not None
+            and first_terminal_index is not None
             and first_terminal_index <= first_truncation_index
         )
 
         if not is_state_invalid and is_next_state_valid:
             return self._construct_batch_sample(index, first_terminal_index, n, gamma)
-        return None
+        else:
+            return None
 
     def _construct_batch_sample(self, index, first_terminal_index, n, gamma):
+        # if first_terminal_index == None, the sample is a regular sample
+        # if first_terminal_index != None, the sample is terminal and the reward should be accumulated until first_terminal_index.
         # Get frames of state of shape (stack_size, H, W) from observation_stack and change to (H, W, stack_size)
-        state = np.moveaxis(
-            self._observation_stack[mod_index_range(index - self._stack_size + 1, index, self._max_capacity)], 0, -1
-        )
+        state_index_range = mod_index_range(index - self._stack_size + 1, index, self._max_capacity)
+        state = np.moveaxis(self._observation_stack[state_index_range], 0, -1)
 
         action = self._action_stack[index]
-        is_terminal = first_terminal_index != -1
+        is_terminal = first_terminal_index is not None
 
         reward_terms = self._reward_stack[
             mod_index_range(index, first_terminal_index if is_terminal else index + n - 1, self._max_capacity)
@@ -156,6 +163,7 @@ class ReplayBuffer:
         reward = np.dot(reward_terms, np.power(gamma, np.arange(len(reward_terms))))
 
         # Get frames of next state of shape (stack_size, H, W) from observation_stack and change to (H, W, stack_size)
+        # if is_terminal, then the next state will be ignored so it is irrelevant
         next_state_index_range = mod_index_range(index + n - self._stack_size + 1, index + n, self._max_capacity)
         next_state = np.moveaxis(self._observation_stack[next_state_index_range], 0, -1)
 
