@@ -4,7 +4,6 @@ import numpy as np
 
 
 class SumTree:
-
     def __init__(self, capacity: int):
         self.capacity = capacity
         self.depth = int(np.ceil(np.log2(capacity))) + 1

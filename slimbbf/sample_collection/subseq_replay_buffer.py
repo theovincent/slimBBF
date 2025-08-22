@@ -15,7 +15,6 @@ class SubsequenceReplayElement(struct.PyTreeNode):
 
 
 class SubsequenceReplayBuffer(ReplayBuffer):
-
     def __init__(
         self,
         max_capacity: int,
