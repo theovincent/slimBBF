@@ -6,6 +6,7 @@ import ale_py
 from typing import Tuple
 import gymnasium as gym
 import numpy as np
+import jax
 import jax.numpy as jnp
 import cv2
 
@@ -23,7 +24,7 @@ class AtariEnv:
             full_action_space=False,
             frameskip=1,
             repeat_action_probability=0.25 if sticky_actions else 0.0,
-            max_num_frames_per_episode=100_000,
+            max_num_frames_per_episode=108_000,
         ).env
 
         self.n_actions = self.env.action_space.n
@@ -52,6 +53,14 @@ class AtariEnv:
 
         self.state_ = np.zeros((self.state_height, self.state_width, self.n_stacked_frames), dtype=np.uint8)
         self.state_[:, :, -1] = self.resize()
+
+    def reset_with_noop_warmup(self, key):
+        self.reset()
+        n_noops = jax.random.randint(key, (), 0, 30)  # max_noops for warmup = 30
+        for _ in range(n_noops):
+            _, terminal = self.step(0)
+            if terminal:
+                self.reset()
 
     def step(self, action: jnp.int8) -> Tuple[float, bool]:
         reward = 0
