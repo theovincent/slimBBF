@@ -1,16 +1,20 @@
+import os
+import json
 import jax
+import numpy as np
 import optax
 from tqdm import trange
 
 from experiments.base.utils import save_data
 from slimbbf.algorithms.bbf import BBF
 from slimbbf.sample_collection.subseq_replay_buffer import SubsequenceReplayBuffer
-from slimbbf.sample_collection.utils import collect_single_sample
+from slimbbf.sample_collection.utils import collect_single_sample, select_action
 
 
 def train(key: jax.Array, p: dict, agent: BBF, env, rb: SubsequenceReplayBuffer):
     epsilon_schedule = optax.linear_schedule(1.0, p["epsilon_end"], p["epsilon_duration"], p["n_initial_samples"])
-    env.reset()
+    noop_key, key = jax.random.split(key)
+    env.reset_with_noop_warmup(noop_key)
     episode_returns = [0]
     episode_lengths = [0]
 
@@ -43,4 +47,28 @@ def train(key: jax.Array, p: dict, agent: BBF, env, rb: SubsequenceReplayBuffer)
             agent.reset_params(n_sampling_steps if n_sampling_steps < p["n_sampling_steps"] else 1)
 
         save_data(p, episode_returns, episode_lengths, agent.get_model())
-        EVALUATE THE MODEL WITH 100 EPISODES!!!
+
+
+def eval(key: jax.Array, p: dict, agent: BBF, env):
+    episode_termination = np.zeros((env.n_envs,), dtype=np.uint8)
+    episode_returns = np.zeros((env.n_envs,), dtype=np.float32)
+    episode_lengths = np.zeros((env.n_envs,), dtype=np.uint32)
+    while env.termination_mask.all():
+        actions_key, key = jax.random.split(key)
+        actions = jax.vmap(select_action, in_axes=(None, None, 0, None, None, None, None))(
+            agent.best_action, agent.params, env.states, actions_key, env.n_actions, lambda: 0.001, 1
+        )
+        rewards = env.step(actions)
+        episode_returns += rewards * (1 - episode_termination)
+        episode_lengths += np.ones((env.n_envs,)) * (1 - episode_termination)
+        episode_termination |= env.termination_mask
+
+    os.makedirs(os.path.join(p["save_path"], "eval_episode_returns_and_lengths"), exist_ok=True)
+    episode_returns_and_lengths_path = os.path.join(
+        p["save_path"], f"eval_episode_returns_and_lengths/{p['seed']}.json"
+    )
+    json.dump(
+        {"episode_lengths": episode_lengths, "episode_returns": episode_returns},
+        open(episode_returns_and_lengths_path, "w"),
+        indent=4,
+    )

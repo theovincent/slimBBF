@@ -4,9 +4,10 @@ import sys
 import jax
 import numpy as np
 
-from experiments.base.bbf import train
+from experiments.base.bbf import train, eval
 from experiments.base.utils import prepare_logs
 from slimbbf.environments.atari import AtariEnv
+from slimbbf.environments.atari_eval import AtariEval
 from slimbbf.algorithms.bbf import BBF
 from slimbbf.sample_collection.subseq_replay_buffer import SubsequenceReplayBuffer
 from slimbbf.sample_collection.samplers import PrioritizedSamplingDistribution
@@ -16,9 +17,10 @@ def run(argvs=sys.argv[1:]):
     env_name, algo_name = os.path.abspath(__file__).split("/")[-2], os.path.abspath(__file__).split("/")[-1][:-3]
     p = prepare_logs(env_name, algo_name, argvs)
 
-    q_key, train_key = jax.random.split(jax.random.PRNGKey(p["seed"]))
+    q_key, train_key, eval_key, eval_env_key = jax.random.split(jax.random.PRNGKey(p["seed"]), 4)
 
     env = AtariEnv(p["experiment_name"].split("_")[-1], sticky_actions=False)  # no sticky actions in Atari 100k
+    env_eval = AtariEval(p["experiment_name"].split("_")[-1], sticky_actions=False, n_envs=100, key=eval_env_key)
     rb = SubsequenceReplayBuffer(
         sampling_distribution=PrioritizedSamplingDistribution(p["seed"], p["replay_buffer_capacity"]),
         max_capacity=p["replay_buffer_capacity"],
@@ -48,6 +50,7 @@ def run(argvs=sys.argv[1:]):
         spr_steps=5,
     )
     train(train_key, p, agent, env, rb)
+    eval(eval_key, p, agent, env_eval)
 
 
 if __name__ == "__main__":
