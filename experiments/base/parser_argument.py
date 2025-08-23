@@ -174,6 +174,13 @@ def add_base_arguments(parser: argparse.ArgumentParser):
         type=int,
         default=20_000,
     )
+    parser.add_argument(
+        "-eval",
+        "--eval",
+        help="Run evaluation.",
+        default=False,
+        action="store_true",
+    )
 
 
 @output_added_arguments
