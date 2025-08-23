@@ -25,10 +25,11 @@ class AtariEnv:
             frameskip=1,
             repeat_action_probability=0.25 if sticky_actions else 0.0,
             max_num_frames_per_episode=108_000,
+            obs_type="grayscale",
         ).env
 
         self.n_actions = self.env.action_space.n
-        self.original_state_height, self.original_state_width, _ = self.env.observation_space._shape
+        self.original_state_height, self.original_state_width = self.env.observation_space._shape
         self.screen_buffer = [
             np.empty((self.original_state_height, self.original_state_width), dtype=np.uint8),
             np.empty((self.original_state_height, self.original_state_width), dtype=np.uint8),
@@ -43,12 +44,12 @@ class AtariEnv:
         return jnp.array(self.state_, dtype=jnp.float32)
 
     def reset(self) -> None:
-        self.env.reset()
+        obs_, info_ = self.env.reset()
 
         self.n_steps = 0
-        self.n_lives = self.environment.ale.lives()  # to terminate on loss life
+        self.n_lives = info_["lives"]  # to terminate on loss life
 
-        self.env.env.ale.getScreenGrayscale(self.screen_buffer[0])
+        self.screen_buffer[0] = obs_
         self.screen_buffer[1].fill(0)
 
         self.state_ = np.zeros((self.state_height, self.state_width, self.n_stacked_frames), dtype=np.uint8)
@@ -66,16 +67,15 @@ class AtariEnv:
         reward = 0
 
         for idx_frame in range(self.n_skipped_frames):
-            _, reward_, terminal_, _, _ = self.env.step(action)
+            obs_, reward_, terminal_, truncation_, info_ = self.env.step(action)
 
             # terminate on loss life
-            terminal = terminal_ or self.environment.ale.lives() < self.n_lives
+            terminal = terminal_ or truncation_ or info_["lives"] < self.n_lives
 
             reward += reward_
 
             if idx_frame >= self.n_skipped_frames - 2:
-                t = idx_frame - (self.n_skipped_frames - 2)
-                self.env.env.ale.getScreenGrayscale(self.screen_buffer[t])
+                self.screen_buffer[idx_frame - (self.n_skipped_frames - 2)] = obs_
 
             if terminal:
                 break

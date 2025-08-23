@@ -58,18 +58,18 @@ class AtariEval:
                 self.reset(env_id)
 
     def reset(self, env_id) -> None:
-        obs_, _ = self.raw_envs[env_id].reset()
-        self.n_lives[env_id] = self.raw_envs[env_id].env.env.ale.lives()  # to terminate on loss life
+        obs_, info_ = self.raw_envs[env_id].reset()
+        self.n_lives[env_id] = info_["lives"]  # to terminate on loss life
         self.screen_buffers[env_id, 0] = obs_
         self.screen_buffers[env_id, 1].fill(0)
         self.states_[env_id, :, :, -1] = self.resize(self.screen_buffers[env_id, 0])
 
     def noop_step(self, env_id):
         for idx_frame in range(self.n_skipped_frames):
-            obs_, _, terminal_, _, _ = self.raw_envs[env_id].step(0)  # action=0 is NOOP, we ignore reward in this step
+            obs_, _, terminal_, _, info_ = self.raw_envs[env_id].step(0)  # action=0 is NOOP, ignore reward in this step
 
             # terminate on loss life
-            terminal = terminal_ or self.raw_envs[env_id].env.env.ale.lives() < self.n_lives[env_id]
+            terminal = terminal_ or info_["lives"] < self.n_lives[env_id]
 
             if idx_frame >= self.n_skipped_frames - 2:
                 self.screen_buffers[env_id, idx_frame - (self.n_skipped_frames - 2)] = obs_
@@ -96,7 +96,6 @@ class AtariEval:
             obs_, rewards_, terminals_, truncations_, info_ = self.envs.step(actions)
             rewards += rewards_ * (1 - self.termination_mask)
             self.termination_mask = self.termination_mask | terminals_ | truncations_ | info_["lives"] < self.n_lives
-            self.n_lives = info_["lives"]
 
             if idx_frame >= self.n_skipped_frames - 2:
                 self.screen_buffers[:, idx_frame - (self.n_skipped_frames - 2)] = obs_
