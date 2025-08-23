@@ -3,7 +3,7 @@ import jax.numpy as jnp
 
 
 def random_crop(key, img, cropped_shape):
-    key_width, key_height = jax.random.split(key, 2)
+    key_width, key_height = jax.random.split(key)
     width = jax.random.randint(key_width, (), 0, img.shape[0] - cropped_shape[0])
     height = jax.random.randint(key_height, (), 0, img.shape[1] - cropped_shape[1])
     # Only crop along width and height axes

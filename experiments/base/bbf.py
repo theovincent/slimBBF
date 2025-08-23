@@ -14,7 +14,7 @@ from slimbbf.sample_collection.utils import collect_single_sample, select_action
 def train(key: jax.Array, p: dict, agent: BBF, env, rb: SubsequenceReplayBuffer):
     epsilon_schedule = optax.linear_schedule(1.0, p["epsilon_end"], p["epsilon_duration"], p["n_initial_samples"])
     noop_key, key = jax.random.split(key)
-    env.reset_with_noop_warmup(noop_key)
+    env.reset_with_noop(noop_key)
     episode_returns = [0]
     episode_lengths = [0]
 

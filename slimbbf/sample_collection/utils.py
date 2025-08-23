@@ -28,6 +28,6 @@ def collect_single_sample(key, env, agent, rb: ReplayBuffer, p, epsilon_schedule
     rb.add(obs, action, rb._clipping(reward), absorbing, is_truncation)
 
     if absorbing or is_truncation:
-        env.reset_with_noop_warmup(noop_key)
+        env.reset_with_noop(noop_key)
 
     return reward, absorbing or is_truncation

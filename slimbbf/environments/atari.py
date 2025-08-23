@@ -54,9 +54,9 @@ class AtariEnv:
         self.state_ = np.zeros((self.state_height, self.state_width, self.n_stacked_frames), dtype=np.uint8)
         self.state_[:, :, -1] = self.resize()
 
-    def reset_with_noop_warmup(self, key):
+    def reset_with_noop(self, key):
         self.reset()
-        n_noops = jax.random.randint(key, (), 0, 30)  # max_noops for warmup = 30
+        n_noops = jax.random.randint(key, (), 0, 30)  # max_noops = 30
         for _ in range(n_noops):
             _, terminal = self.step(0)
             if terminal:

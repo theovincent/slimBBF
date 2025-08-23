@@ -44,7 +44,7 @@ class AtariEval:
 
         noop_key = jax.random.split(key, n_envs)
         for i in range(n_envs):
-            self.reset_with_noop_warmup(noop_key[i], i)
+            self.reset_with_noop(noop_key[i], i)
 
     def reset(self, env_id) -> None:
         self.envs[env_id].reset()
@@ -54,9 +54,9 @@ class AtariEval:
         self.screen_buffer[env_id, 1].fill(0)
         self.states[env_id, :, :, -1] = self.resize(self.screen_buffers[env_id, 0])
 
-    def reset_with_noop_warmup(self, key, env_id):
+    def reset_with_noop(self, key, env_id):
         self.reset(env_id)
-        n_noops = jax.random.randint(key, (), 0, 30)  # max_noops for warmup = 30
+        n_noops = jax.random.randint(key, (), 0, 30)  # max_noops = 30
         for _ in range(n_noops):
             _, terminal = self.step(0)
             if terminal:
