@@ -17,7 +17,7 @@ class AtariEval:
 
         gym.register_envs(ale_py)
 
-        # Vectorized environments
+        # Asynchronous vectorized environments
         self.envs = gym.vector.AsyncVectorEnv(
             [
                 lambda: gym.make(
