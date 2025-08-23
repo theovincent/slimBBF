@@ -17,74 +17,95 @@ class AtariEval:
 
         gym.register_envs(ale_py)
 
-        # Asynchronous vectorized environments
-        self.envs = gym.vector.AsyncVectorEnv(
-            [
-                lambda: gym.make(
-                    f"ALE/{self.name}-v5",
-                    full_action_space=False,
-                    frameskip=1,
-                    repeat_action_probability=0.25 if sticky_actions else 0.0,
-                    max_num_frames_per_episode=108_000,
-                )
-                for _ in range(n_envs)
-            ]
-        )
+        # start with list of envs for NOOP initialization
+        self.raw_envs = [
+            gym.make(
+                f"ALE/{self.name}-v5",
+                full_action_space=False,
+                frameskip=1,
+                repeat_action_probability=0.25 if sticky_actions else 0.0,
+                max_num_frames_per_episode=108_000,
+                obs_type="grayscale",
+            )
+            for _ in range(n_envs)
+        ]
 
-        self.n_actions = self.envs.single_action_space.n
-        self.original_state_height, self.original_state_width, _ = self.envs.single_observation_space.shape
-
+        self.n_actions = self.raw_envs[0].action_space.n
+        self.original_state_height, self.original_state_width = self.raw_envs[0].observation_space._shape
         self.screen_buffers = np.zeros(
             (n_envs, 2, self.original_state_height, self.original_state_width), dtype=np.uint8
         )
-        self.states = np.zeros((n_envs, self.state_height, self.state_width, self.n_stacked_frames), dtype=np.uint8)
-        self.n_steps = np.zeros(n_envs, dtype=np.int32)
+        self.states_ = np.zeros((n_envs, self.state_height, self.state_width, self.n_stacked_frames), dtype=np.uint8)
         self.n_lives = np.zeros(n_envs, dtype=np.int32)
-        self.termination_mask = np.zeros(n_envs, dtype=np.uint8)
 
-        noop_key = jax.random.split(key, n_envs)
-        for i in range(n_envs):
-            self.reset_with_noop(noop_key[i], i)
+        # Apply NOOP reset on all envs sequentially (different NOOP steps)
+        noop_keys = jax.random.split(key, n_envs)
+        for env_id in range(n_envs):
+            self.reset_with_noop(noop_keys[env_id], env_id)
 
-    def reset(self, env_id) -> None:
-        self.envs[env_id].reset()
-        self.n_lives[env_id] = self.envs[env_id].ale.lives()  # to terminate on loss life
+        # Create async vectorized env for faster step(), starting from state after NOOP initialization
+        # lambda e=env: e needed for each lambda in loop to capture different env
+        self.envs = gym.vector.AsyncVectorEnv([lambda e=env: e for env in self.raw_envs])
 
-        self.envs[env_id].ale.getScreenGrayscale(self.screen_buffer[env_id, 0])
-        self.screen_buffer[env_id, 1].fill(0)
-        self.states[env_id, :, :, -1] = self.resize(self.screen_buffers[env_id, 0])
+        self.termination_mask = np.zeros(n_envs, dtype=np.uint8)  # stores termination flag in each env
 
     def reset_with_noop(self, key, env_id):
         self.reset(env_id)
         n_noops = jax.random.randint(key, (), 0, 30)  # max_noops = 30
         for _ in range(n_noops):
-            _, terminal = self.step(0)
+            terminal = self.noop_step(env_id)
             if terminal:
-                self.reset()
+                self.reset(env_id)
+
+    def reset(self, env_id) -> None:
+        obs_, _ = self.raw_envs[env_id].reset()
+        self.n_lives[env_id] = self.raw_envs[env_id].env.env.ale.lives()  # to terminate on loss life
+        self.screen_buffers[env_id, 0] = obs_
+        self.screen_buffers[env_id, 1].fill(0)
+        self.states_[env_id, :, :, -1] = self.resize(self.screen_buffers[env_id, 0])
+
+    def noop_step(self, env_id):
+        for idx_frame in range(self.n_skipped_frames):
+            obs_, _, terminal_, _, _ = self.raw_envs[env_id].step(0)  # action=0 is NOOP, we ignore reward in this step
+
+            # terminate on loss life
+            terminal = terminal_ or self.raw_envs[env_id].env.env.ale.lives() < self.n_lives[env_id]
+
+            if idx_frame >= self.n_skipped_frames - 2:
+                self.screen_buffers[env_id, idx_frame - (self.n_skipped_frames - 2)] = obs_
+
+            if terminal:
+                break
+
+        pooled = np.max(self.screen_buffers[env_id], axis=0)
+        resized = self.resize(pooled)
+
+        self.states_ = np.roll(self.states_, -1, axis=-1)
+        self.states_[env_id, :, :, -1] = resized
+
+        return terminal
 
     @property
     def states(self) -> jnp.ndarray:
-        return jnp.array(self.states, dtype=jnp.float32)
+        return jnp.array(self.states_, dtype=jnp.float32)
 
     def step(self, actions: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         rewards = np.zeros(self.n_envs, dtype=np.float32)
 
         for idx_frame in range(self.n_skipped_frames):
-            _, rewards_, terminals_, truncations_, _ = self.envs.step(actions)
+            obs_, rewards_, terminals_, truncations_, info_ = self.envs.step(actions)
             rewards += rewards_ * (1 - self.termination_mask)
-            self.termination_mask = self.termination_mask | terminals_ | truncations_
+            self.termination_mask = self.termination_mask | terminals_ | truncations_ | info_["lives"] < self.n_lives
+            self.n_lives = info_["lives"]
 
             if idx_frame >= self.n_skipped_frames - 2:
-                t = idx_frame - (self.n_skipped_frames - 2)
-                for i in range(self.n_envs):
-                    self.envs.envs[i].unwrapped.ale.getScreenGrayscale(self.screen_buffers[i, t])
+                self.screen_buffers[:, idx_frame - (self.n_skipped_frames - 2)] = obs_
 
-        pooled = np.maximum(self.screen_buffers, axis=1)
+        pooled = np.max(self.screen_buffers, axis=1)
         resized = np.stack([self.resize(pooled[i]) for i in range(self.n_envs)], axis=0)
 
-        self.states = np.roll(self.states, -1, axis=-1)
-        self.states[:, :, :, -1] = resized
-        self.n_steps += 1
+        self.states_ = np.roll(self.states_, -1, axis=-1)
+        self.states_[:, :, :, -1] = resized
 
         return rewards
 
