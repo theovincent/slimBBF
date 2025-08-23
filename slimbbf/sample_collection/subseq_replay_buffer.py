@@ -54,7 +54,7 @@ class SubsequenceReplayBuffer(ReplayBuffer):
 
         # Constructs mask for SPR loss with True for all indices in same trajectory as state
         spr_obs_indices = mod_index_range(index, index + self.spr_window, self.max_capacity)
-        trajectory_end_flags = np.loigcal_or(
+        trajectory_end_flags = np.logical_or(
             self.is_terminal_stack[spr_obs_indices], self.is_truncation_stack[spr_obs_indices]
         )
         next_states_in_trajectory = (1 - trajectory_end_flags).cumprod()

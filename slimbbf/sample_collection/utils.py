@@ -25,7 +25,7 @@ def collect_single_sample(key, env, agent, rb: ReplayBuffer, p, epsilon_schedule
     reward, absorbing = env.step(action)
 
     is_truncation = env.n_steps >= p["horizon"]
-    rb.add(obs, action, rb._clipping(reward), absorbing, is_truncation)
+    rb.add(obs, action, rb.clipping(reward), absorbing, is_truncation)
 
     if absorbing or is_truncation:
         env.reset_with_noop(noop_key)
