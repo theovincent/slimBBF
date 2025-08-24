@@ -3,7 +3,7 @@
 function parse_arguments() {
     IFS='_' read -ra splitted_file_name <<< $(basename $0)
     ALGO_NAME=${splitted_file_name[-1]::-3}
-    ENV_NAME=$(basename $(dirname ${0}))
+    ENV_NAME=$(basename $(dirname $(dirname ${0})))
     ARGS=""
     while [[ $# -gt 0 ]]; do
         case $1 in
