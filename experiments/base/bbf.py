@@ -69,7 +69,7 @@ def eval(key: jax.Array, p: dict, agent: BBF, env):
         p["save_path"], f"eval_episode_returns_and_lengths/{p['seed']}.json"
     )
     json.dump(
-        {"episode_lengths": episode_lengths, "episode_returns": episode_returns},
+        {"episode_lengths": episode_lengths.tolist(), "episode_returns": episode_returns.tolist()},
         open(episode_returns_and_lengths_path, "w"),
         indent=4,
     )
