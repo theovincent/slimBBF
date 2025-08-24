@@ -26,7 +26,7 @@ def train(key: jax.Array, p: dict, agent: BBF, env, rb: SubsequenceReplayBuffer)
         episode_lengths[-1] += 1
         if has_reset:
             print(
-                f"\{n_sampling_steps} sampling steps: Return {episode_returns[-1]} after {episode_lengths[-1]} steps.\n",
+                f"\n{n_sampling_steps} sampling steps: Return {episode_returns[-1]} after {episode_lengths[-1]} steps.\n",
                 flush=True,
             )
             p["wandb"].log(
