@@ -16,6 +16,8 @@ def normalize_and_augment(state, key):
     x = jnp.array(state, ndmin=4) / 255.0
 
     # Only pad along width and height axes
+    x_shape = x.shape
+    x = x.reshape(-1, *x_shape[-3:])
     x_padded = jnp.pad(x, [(0, 0), (4, 4), (4, 4), (0, 0)], "edge")
     crop_key, intensity_key = jax.random.split(key)
     x_cropped = jax.vmap(random_crop, in_axes=(0, 0, None))(
@@ -24,7 +26,7 @@ def normalize_and_augment(state, key):
     x_augmented = x_cropped * (
         1.0 + (0.05 * jnp.clip(jax.random.normal(intensity_key, shape=(x.shape[0], 1, 1, 1)), -2.0, 2.0))
     )
-    return x_augmented.squeeze()
+    return x_augmented.reshape(x_shape).squeeze()
 
 
 def exponential_scheduler(decay_period, initial_value, final_value):
