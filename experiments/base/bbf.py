@@ -53,13 +53,13 @@ def eval(key: jax.Array, p: dict, agent: BBF, env):
     episode_termination = np.zeros((env.n_envs,), dtype=np.uint8)
     episode_returns = np.zeros((env.n_envs,), dtype=np.float32)
     episode_lengths = np.zeros((env.n_envs,), dtype=np.uint32)
-    while not env.termination_mask.all():
+    while not env.termination_mask.all() and env.n_steps < p["horizon"]:
         actions_key, key = jax.random.split(key)
         actions_key = jax.random.split(actions_key, env.n_envs)
         actions = jax.vmap(select_action, in_axes=(None, None, 0, 0, None, None, None))(
             agent.best_action, agent.params, env.states, actions_key, env.n_actions, lambda _: 0.001, 1
         )
-        rewards = env.step(actions)
+        rewards = env.step(np.array(actions))
         episode_returns += rewards * (1 - episode_termination)
         episode_lengths += np.ones((env.n_envs,), dtype=np.uint32) * (1 - episode_termination)
         episode_termination |= env.termination_mask

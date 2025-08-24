@@ -3,6 +3,7 @@ import sys
 
 import jax
 import numpy as np
+import multiprocessing as mp
 
 from experiments.base.bbf import train, eval
 from experiments.base.utils import prepare_logs
@@ -10,6 +11,9 @@ from slimbbf.environments.atari import AtariEnv
 from slimbbf.environments.atari_eval import AtariEval
 from slimbbf.algorithms.bbf import BBF
 from slimbbf.sample_collection.subseq_replay_buffer import SubsequenceReplayBuffer
+
+
+mp.set_start_method("spawn", force=True)
 
 
 def run(argvs=sys.argv[1:]):
@@ -48,8 +52,7 @@ def run(argvs=sys.argv[1:]):
     train(train_key, p, agent, env, rb)
 
     if p["eval"]:
-        eval_env_key, eval_key = jax.random.split(eval_key)
-        env_eval = AtariEval(p["experiment_name"].split("_")[-1], sticky_actions=False, n_envs=100, key=eval_env_key)
+        env_eval = AtariEval(p["experiment_name"].split("_")[-1], sticky_actions=False, n_envs=100, seed=p["seed"])
         eval(eval_key, p, agent, env_eval)
 
 

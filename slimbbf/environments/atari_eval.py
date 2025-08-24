@@ -1,14 +1,12 @@
 import ale_py
 import gymnasium as gym
 import numpy as np
-import jax
-import jax.numpy as jnp
 import cv2
 from typing import Tuple
 
 
 class AtariEval:
-    def __init__(self, name: str, sticky_actions: bool, n_envs: int, key: jax.Array) -> None:
+    def __init__(self, name: str, sticky_actions: bool, n_envs: int, seed: int) -> None:
         self.name = name
         self.n_envs = n_envs
         self.state_height, self.state_width = (84, 84)
@@ -37,11 +35,11 @@ class AtariEval:
         )
         self.states_ = np.zeros((n_envs, self.state_height, self.state_width, self.n_stacked_frames), dtype=np.uint8)
         self.n_lives = np.zeros(n_envs, dtype=np.int32)
+        self.rng = np.random.default_rng(seed)
 
         # Apply NOOP reset on all envs sequentially (different NOOP steps)
-        noop_keys = jax.random.split(key, n_envs)
         for env_id in range(n_envs):
-            self.reset_with_noop(noop_keys[env_id], env_id)
+            self.reset_with_noop(env_id)
 
         # Create async vectorized env for faster step(), starting from state after NOOP initialization
         # lambda e=env: e needed for each lambda in loop to capture different env
@@ -49,9 +47,9 @@ class AtariEval:
 
         self.termination_mask = np.zeros(n_envs, dtype=np.uint8)  # stores termination flag in each env
 
-    def reset_with_noop(self, key, env_id):
+    def reset_with_noop(self, env_id):
         self.reset(env_id)
-        n_noops = jax.random.randint(key, (), 0, 30)  # max_noops = 30
+        n_noops = self.rng.integers(0, 30, 1)[0]  # max_noops = 30
         for _ in range(n_noops):
             terminal = self.noop_step(env_id)
             if terminal:
@@ -59,9 +57,13 @@ class AtariEval:
 
     def reset(self, env_id) -> None:
         obs_, info_ = self.raw_envs[env_id].reset()
+
+        self.n_steps = 0
         self.n_lives[env_id] = info_["lives"]  # to terminate on loss life
+
         self.screen_buffers[env_id, 0] = obs_
         self.screen_buffers[env_id, 1].fill(0)
+
         self.states_[env_id, :, :, -1] = self.resize(self.screen_buffers[env_id, 0])
 
     def noop_step(self, env_id):
@@ -86,16 +88,16 @@ class AtariEval:
         return terminal
 
     @property
-    def states(self) -> jnp.ndarray:
-        return jnp.array(self.states_, dtype=jnp.float32)
+    def states(self) -> np.ndarray:
+        return np.array(self.states_, dtype=np.float32)
 
     def step(self, actions: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         rewards = np.zeros(self.n_envs, dtype=np.float32)
 
         for idx_frame in range(self.n_skipped_frames):
-            obs_, rewards_, terminals_, truncations_, info_ = self.envs.step(actions)
+            obs_, rewards_, terminals_, _, info_ = self.envs.step(actions)
             rewards += rewards_ * (1 - self.termination_mask)
-            self.termination_mask = self.termination_mask | terminals_ | truncations_ | info_["lives"] < self.n_lives
+            self.termination_mask = self.termination_mask | terminals_ | info_["lives"] < self.n_lives
 
             if idx_frame >= self.n_skipped_frames - 2:
                 self.screen_buffers[:, idx_frame - (self.n_skipped_frames - 2)] = obs_
@@ -105,6 +107,8 @@ class AtariEval:
 
         self.states_ = np.roll(self.states_, -1, axis=-1)
         self.states_[:, :, :, -1] = resized
+
+        self.n_steps += 1
 
         return rewards
 

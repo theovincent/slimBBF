@@ -67,10 +67,10 @@ class AtariEnv:
         reward = 0
 
         for idx_frame in range(self.n_skipped_frames):
-            obs_, reward_, terminal_, truncation_, info_ = self.env.step(action)
+            obs_, reward_, terminal_, _, info_ = self.env.step(action)
 
             # terminate on loss life
-            terminal = terminal_ or truncation_ or info_["lives"] < self.n_lives
+            terminal = terminal_ or info_["lives"] < self.n_lives
 
             reward += reward_
 
