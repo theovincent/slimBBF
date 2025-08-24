@@ -8,11 +8,6 @@ GAME="BattleZone"
 
 PLATFORM="normal/local"  # nhrfau/cluster normal/cluster normal/local
 
-if [ $PLATFORM == "normal/local" ]
-then
-    SHARED_ARGS="$SHARED_ARGS --tmux_name slimbbf"
-fi
-
 SHARED_NAME="BBF"
 
 BBF_ARGS="--experiment_name ${SHARED_NAME}_${GAME}"
