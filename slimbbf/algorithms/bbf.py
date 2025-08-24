@@ -119,7 +119,7 @@ class BBF:
         samples = replace(samples, states_stack=normalize_and_augment(samples.states_stack, states_stack_key))
         samples = replace(samples, next_state=normalize_and_augment(samples.next_state, next_state_key))
 
-        losses, td_losses, spr_losses = jax.vmap(self.loss, in_axes=(None, None, 0, 0))(
+        losses, td_losses, spr_losses = jax.vmap(self.loss, in_axes=(None, None, 0, 0, None))(
             params, params_target, samples, importance_weights, discounted_gamma
         )
 
