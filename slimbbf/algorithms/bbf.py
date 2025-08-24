@@ -175,10 +175,10 @@ class BBF:
         # Partially reset the encoder and the transition model. Fully reset the rest
         online_key, target_key = jax.random.split(key)
         new_params = self.network.init(
-            online_key, jnp.zeros(self.observation_dim, dtype=jnp.float32), jnp.zeros((self.spr_steps,))
+            online_key, jnp.zeros(self.observation_dim, dtype=jnp.float32), jnp.zeros((self.spr_steps,), dtype=int)
         )
         new_target_params = self.network.init(
-            target_key, jnp.zeros(self.observation_dim, dtype=jnp.float32), jnp.zeros((self.spr_steps,))
+            target_key, jnp.zeros(self.observation_dim, dtype=jnp.float32), jnp.zeros((self.spr_steps,), dtype=int)
         )
 
         new_params["params"]["encoder"] = optax.incremental_update(
