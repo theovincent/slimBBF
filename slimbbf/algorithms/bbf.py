@@ -123,7 +123,7 @@ class BBF:
             params, params_target, samples, importance_weights, discounted_gamma
         )
 
-        return losses.mean(), td_losses, spr_losses.mean()
+        return losses.mean(), (td_losses, spr_losses.mean())
 
     def loss(
         self,
