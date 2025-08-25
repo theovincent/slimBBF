@@ -17,7 +17,7 @@ def train(key: jax.Array, p: dict, agent: BBF, env, env_eval, rb: SubsequenceRep
     eval_returns = []
     eval_lengths = []
 
-    for n_sampling_steps in range(1, p["n_sampling_steps"]):
+    for n_sampling_steps in range(1, p["n_sampling_steps"] + 1):
         key, explore_key = jax.random.split(key)
         reward, has_reset = collect_single_sample(explore_key, env, agent, rb, p, epsilon_schedule, n_sampling_steps)
 
