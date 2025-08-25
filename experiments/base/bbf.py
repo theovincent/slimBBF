@@ -50,26 +50,18 @@ def train(key: jax.Array, p: dict, agent: BBF, env, rb: SubsequenceReplayBuffer)
 
 
 def eval(key: jax.Array, p: dict, agent: BBF, env):
-    episode_termination = np.zeros((env.n_envs,), dtype=np.uint8)
+    episode_termination = env.termination_mask  # needed for considering rewards,length until env.termination_mask
     episode_returns = np.zeros((env.n_envs,), dtype=np.float32)
     episode_lengths = np.zeros((env.n_envs,), dtype=np.uint32)
-    while not env.termination_mask.all() and env.n_steps < p["horizon"]:
+    while not episode_termination.all() and env.n_steps < p["horizon"]:
         actions_key, key = jax.random.split(key)
         actions_key = jax.random.split(actions_key, env.n_envs)
         actions = jax.vmap(select_action, in_axes=(None, None, 0, 0, None, None, None))(
             agent.best_action, agent.params, env.states, actions_key, env.n_actions, lambda _: 0.001, 1
         )
-        rewards = env.step(np.array(actions))
+        rewards = env.step(np.array(actions))  # episode.termination changes here, so we use episode_termination
         episode_returns += rewards * (1 - episode_termination)
         episode_lengths += np.ones((env.n_envs,), dtype=np.uint32) * (1 - episode_termination)
-        episode_termination |= env.termination_mask
+        episode_termination = env.termination_mask
 
-    os.makedirs(os.path.join(p["save_path"], "eval_episode_returns_and_lengths"), exist_ok=True)
-    episode_returns_and_lengths_path = os.path.join(
-        p["save_path"], f"eval_episode_returns_and_lengths/{p['seed']}.json"
-    )
-    json.dump(
-        {"episode_lengths": episode_lengths.tolist(), "episode_returns": episode_returns.tolist()},
-        open(episode_returns_and_lengths_path, "w"),
-        indent=4,
-    )
+    save_data(p, episode_returns.tolist(), episode_lengths.tolist(), None)
