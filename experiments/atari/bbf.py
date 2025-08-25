@@ -20,9 +20,11 @@ def run(argvs=sys.argv[1:]):
     env_name, algo_name = os.path.abspath(__file__).split("/")[-2], os.path.abspath(__file__).split("/")[-1][:-3]
     p = prepare_logs(env_name, algo_name, argvs)
 
-    q_key, train_key, eval_key = jax.random.split(jax.random.PRNGKey(p["seed"]), 3)
+    q_key, train_key = jax.random.split(jax.random.PRNGKey(p["seed"]))
 
     env = AtariEnv(p["experiment_name"].split("_")[-1], sticky_actions=False)  # no sticky actions in Atari 100k
+    # env_eval in lambda to create 100 envs only when needed
+    env_eval = lambda: AtariEval(p["experiment_name"].split("_")[-1], sticky_actions=False, n_envs=100, seed=p["seed"])
     rb = SubsequenceReplayBuffer(
         max_capacity=p["replay_buffer_capacity"],
         seed=p["seed"],
@@ -49,10 +51,8 @@ def run(argvs=sys.argv[1:]):
         reset_frequency=p["reset_frequency"],
         spr_steps=5,
     )
-    train(train_key, p, agent, env, rb)
 
-    env_eval = AtariEval(p["experiment_name"].split("_")[-1], sticky_actions=False, n_envs=100, seed=p["seed"])
-    eval(eval_key, p, agent, env_eval)
+    train(train_key, p, agent, env, env_eval, rb)
 
 
 if __name__ == "__main__":
