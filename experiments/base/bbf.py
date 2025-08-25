@@ -79,7 +79,7 @@ def eval(key: jax.Array, p: dict, agent: BBF, env):
         )
         rewards = env.step(np.array(actions))  # episode.termination changes here, so we use episode_termination
         episode_returns += rewards * (1 - episode_termination)
-        episode_lengths += np.ones((env.n_envs,), dtype=np.uint32) * (1 - episode_termination)
+        episode_lengths += (np.ones((env.n_envs,)) * (1 - episode_termination)).astype(np.uint32)
         episode_termination = env.termination_mask
 
     return episode_returns.tolist(), episode_lengths.tolist()
