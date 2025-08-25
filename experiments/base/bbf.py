@@ -1,9 +1,6 @@
-import os
-import json
 import jax
 import numpy as np
 import optax
-from tqdm import trange
 
 from experiments.base.utils import save_data
 from slimbbf.algorithms.bbf import BBF
@@ -20,7 +17,7 @@ def train(key: jax.Array, p: dict, agent: BBF, env, env_eval, rb: SubsequenceRep
     eval_returns = []
     eval_lengths = []
 
-    for n_sampling_steps in trange(1, p["n_sampling_steps"] + 1, miniters=5000):
+    for n_sampling_steps in range(1, p["n_sampling_steps"], miniters=5000):
         key, explore_key = jax.random.split(key)
         reward, has_reset = collect_single_sample(explore_key, env, agent, rb, p, epsilon_schedule, n_sampling_steps)
 
