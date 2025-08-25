@@ -11,4 +11,4 @@ PLATFORM="normal/local"  # nhrfau/cluster normal/cluster normal/local
 SHARED_NAME="BBF"
 
 BBF_ARGS="--experiment_name ${SHARED_NAME}_${GAME}"
-launch_job/atari/${PLATFORM}_bbf.sh --first_seed 1 --last_seed 2 $SHARED_ARGS $BBF_ARGS --disable_wandb
+launch_job/atari/${PLATFORM}_bbf.sh --first_seed 1 --last_seed 3 $SHARED_ARGS $BBF_ARGS
