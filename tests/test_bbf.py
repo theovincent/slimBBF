@@ -52,7 +52,7 @@ class TestBBF(unittest.TestCase):
         update_horizon = jax.random.randint(self.key, (), minval=1, maxval=10)
         computed_target_probs = self.q.compute_target(self.q.params, sample, gamma**update_horizon)
 
-        target_prob_actions = self.q.network.apply(self.q.params, sample.next_state)
+        target_prob_actions = jax.nn.softmax(self.q.network.apply(self.q.params, sample.next_state))
         target_probs = target_prob_actions[jnp.argmax(jax.nn.softmax(target_prob_actions) @ self.q.bins)]
         target_locations_ = sample.reward + (1 - sample.is_terminal) * (gamma**update_horizon) * self.q.bins
         targets_locations = jnp.clip(target_locations_, self.q.bins[0], self.q.bins[-1])
@@ -98,8 +98,8 @@ class TestBBF(unittest.TestCase):
 
         computed_best_action = self.q.best_action(self.q.params, state)
 
-        q_logits = self.q.network.apply(self.q.params, state / 255.0)
-        best_action = jnp.argmax(q_logits @ self.q.bins)
+        q_probs = jax.nn.softmax(self.q.network.apply(self.q.params, state / 255.0))
+        best_action = jnp.argmax(q_probs @ self.q.bins)
         self.assertEqual(best_action, computed_best_action)
 
 

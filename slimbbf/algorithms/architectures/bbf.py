@@ -110,7 +110,7 @@ class BBFNet(nn.Module):
 
         if actions is None:
             # shape (n_actions, n_bins)
-            return nn.softmax(q_logits)
+            return q_logits
         else:
             # shape (n_bins) | (horizon, latent_dimension)
-            return nn.softmax(q_logits)[actions[0]], self.spr_rollout(spatial_latent, actions)
+            return q_logits[actions[0]], self.spr_rollout(spatial_latent, actions)

@@ -135,8 +135,8 @@ class BBF:
     ):
         # Only works for a single sample
         target_probs = self.compute_target(params_target, sample, discounted_gamma)
-        q_probs, spr_predictions = self.network.apply(params, sample.states_stack[0], sample.actions_stack[:-1])
-        cross_entropy = importance_weight * optax.softmax_cross_entropy(q_probs, jax.lax.stop_gradient(target_probs))
+        q_logits, spr_predictions = self.network.apply(params, sample.states_stack[0], sample.actions_stack[:-1])
+        cross_entropy = importance_weight * optax.softmax_cross_entropy(q_logits, jax.lax.stop_gradient(target_probs))
 
         # shape (window_size, latent_dimension)
         spr_targets = jax.vmap(partial(self.network.apply, method=self.network.encode_and_project), in_axes=(None, 0))(
@@ -154,7 +154,7 @@ class BBF:
     def compute_target(self, params: FrozenDict, sample: SubsequenceReplayElement, discounted_gamma: float):
         # computes the target value for single sample
         # shape (n_actions, n_bins)
-        target_probs_actions = self.network.apply(params, sample.next_state)
+        target_probs_actions = jax.nn.softmax(self.network.apply(params, sample.next_state))
         target_probs = target_probs_actions[jnp.argmax(target_probs_actions @ self.bins)]
 
         # shape (n_bins)
@@ -205,7 +205,7 @@ class BBF:
     @partial(jax.jit, static_argnames="self")
     def best_action(self, params: FrozenDict, state: jnp.ndarray):
         normalized_state = state.astype(jnp.float32) / 255.0
-        return jnp.argmax(self.network.apply(params, normalized_state) @ self.bins)
+        return jnp.argmax(jax.nn.softmax(self.network.apply(params, normalized_state)) @ self.bins)
 
     def get_logs(self):
         return {"train/td_loss": self.cumulated_td_loss, "train/spr_loss": self.cumulated_spr_loss}
