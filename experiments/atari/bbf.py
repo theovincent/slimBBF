@@ -51,9 +51,8 @@ def run(argvs=sys.argv[1:]):
     )
     train(train_key, p, agent, env, rb)
 
-    if p["eval"]:
-        env_eval = AtariEval(p["experiment_name"].split("_")[-1], sticky_actions=False, n_envs=100, seed=p["seed"])
-        eval(eval_key, p, agent, env_eval)
+    env_eval = AtariEval(p["experiment_name"].split("_")[-1], sticky_actions=False, n_envs=100, seed=p["seed"])
+    eval(eval_key, p, agent, env_eval)
 
 
 if __name__ == "__main__":

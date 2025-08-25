@@ -60,7 +60,7 @@ def add_base_arguments(parser: argparse.ArgumentParser):
         "--replay_buffer_capacity",
         help="Replay Buffer capacity.",
         type=int,
-        default=200_000,
+        default=110_000,
     )
     parser.add_argument(
         "-bs",
@@ -173,13 +173,6 @@ def add_base_arguments(parser: argparse.ArgumentParser):
         help="Number of sampling steps before resetting the network.",
         type=int,
         default=20_000,
-    )
-    parser.add_argument(
-        "-eval",
-        "--eval",
-        help="Run evaluation.",
-        default=False,
-        action="store_true",
     )
 
 
