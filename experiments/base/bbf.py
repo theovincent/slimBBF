@@ -23,7 +23,7 @@ def train(key: jax.Array, p: dict, agent: BBF, env, env_eval, rb: SubsequenceRep
 
         episode_returns[-1] += reward
         episode_lengths[-1] += 1
-        if has_reset:
+        if has_reset or n_sampling_steps == p["n_sampling_steps"]:
             print(
                 f"\n{n_sampling_steps} sampling steps: Return {episode_returns[-1]} after {episode_lengths[-1]} steps.\n",
                 flush=True,
@@ -42,22 +42,23 @@ def train(key: jax.Array, p: dict, agent: BBF, env, env_eval, rb: SubsequenceRep
         if n_sampling_steps >= p["n_initial_samples"]:
             for _ in range(p["update_to_data"]):
                 agent.update_online_params(rb)
+
+            # evaluate every 20K steps (includes evaluation at the end)
+            if n_sampling_steps % 20_000 == 0:
+                eval_key, key = jax.random.split(key)
+                eval_episode_returns, eval_episode_lengths = eval(eval_key, p, agent, env_eval())
+                p["wandb"].log(
+                    {
+                        "n_sampling_steps": n_sampling_steps,
+                        "performances/eval_avg_return": np.mean(eval_episode_returns),
+                        "performances/eval_avg_length": np.mean(episode_lengths[-1]),
+                    }
+                )
+                eval_returns.append(eval_episode_returns)
+                eval_lengths.append(eval_episode_lengths)
+
             # avoid resetting on last iteration
             agent.reset_params(n_sampling_steps if n_sampling_steps < p["n_sampling_steps"] else 1)
-
-        # evaluate every 20K steps (includes evaluation at the end)
-        if n_sampling_steps % 20_000 == 0:
-            eval_key, key = jax.random.split(key)
-            eval_episode_returns, eval_episode_lengths = eval(eval_key, p, agent, env_eval())
-            p["wandb"].log(
-                {
-                    "n_sampling_steps": n_sampling_steps,
-                    "performances/eval_avg_return": np.mean(eval_episode_returns),
-                    "performances/eval_avg_length": np.mean(episode_lengths[-1]),
-                }
-            )
-            eval_returns.append(eval_episode_returns)
-            eval_lengths.append(eval_episode_lengths)
 
         save_data(p, episode_returns, episode_lengths, agent.get_model())
 
