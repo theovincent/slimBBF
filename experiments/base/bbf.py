@@ -10,7 +10,7 @@ from slimbbf.sample_collection.utils import collect_single_sample, select_action
 
 def train(key: jax.Array, p: dict, agent: BBF, env, env_eval, rb: SubsequenceReplayBuffer):
     epsilon_schedule = optax.linear_schedule(1.0, p["epsilon_end"], p["epsilon_duration"], p["n_initial_samples"])
-    noop_key, key = jax.random.split(key)
+    key, noop_key = jax.random.split(key)
     env.reset_with_noop(noop_key)
     episode_returns = [0]
     episode_lengths = [0]
@@ -45,20 +45,21 @@ def train(key: jax.Array, p: dict, agent: BBF, env, env_eval, rb: SubsequenceRep
 
             # evaluate every 20K steps (includes evaluation at the end)
             if n_sampling_steps % 20_000 == 0:
-                eval_key, key = jax.random.split(key)
+                key, eval_key = jax.random.split(key)
                 eval_episode_returns, eval_episode_lengths = eval(eval_key, p, agent, env_eval())
                 p["wandb"].log(
                     {
                         "n_sampling_steps": n_sampling_steps,
                         "performances/eval_avg_return": np.mean(eval_episode_returns),
-                        "performances/eval_avg_length": np.mean(episode_lengths[-1]),
+                        "performances/eval_avg_length": np.mean(eval_episode_lengths),
                     }
                 )
                 eval_returns.append(eval_episode_returns)
                 eval_lengths.append(eval_episode_lengths)
 
             # avoid resetting on last iteration
-            agent.reset_params(n_sampling_steps if n_sampling_steps < p["n_sampling_steps"] else 1)
+            if n_sampling_steps % p["reset_frequency"] == 0 and n_sampling_steps < p["n_sampling_steps"]:
+                agent.reset_params()
 
         save_data(p, episode_returns, episode_lengths, agent.get_model())
 

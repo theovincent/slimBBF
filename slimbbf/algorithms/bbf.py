@@ -30,7 +30,6 @@ class BBF:
         max_update_horizon: int,
         gamma_horizon_decay_steps: int,
         tau: float,
-        reset_frequency: int,
         spr_steps: int,
     ):
         self.observation_dim = observation_dim
@@ -58,7 +57,6 @@ class BBF:
         self.gamma_schedule = reverse_exponential_scheduler(gamma_horizon_decay_steps, min_gamma, max_gamma)
         self.tau = tau
         self.grad_steps_after_reset = 0  # to track number of grad steps for schedulers
-        self.reset_frequency = reset_frequency
         self.cumulated_td_loss = 0
         self.cumulated_spr_loss = 0
 
@@ -83,13 +81,12 @@ class BBF:
         self.cumulated_spr_loss = (1 - self.tau) * self.cumulated_spr_loss + self.tau * spr_loss
         self.grad_steps_after_reset += 1
 
-    def reset_params(self, n_sampling_steps: int):
-        if n_sampling_steps % self.reset_frequency == 0:
-            self.key, key = jax.random.split(self.key)
-            self.params, self.target_params, self.optimizer_state = self.apply_reset_params(
-                self.params, self.target_params, self.optimizer_state, key
-            )
-            self.grad_steps_after_reset = 0
+    def reset_params(self):
+        self.key, key = jax.random.split(self.key)
+        self.params, self.target_params, self.optimizer_state = self.apply_reset_params(
+            self.params, self.target_params, self.optimizer_state, key
+        )
+        self.grad_steps_after_reset = 0
 
     @partial(jax.jit, static_argnames="self")
     def learn_on_batch(
