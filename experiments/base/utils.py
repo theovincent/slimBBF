@@ -130,14 +130,14 @@ def save_data(p: dict, episode_returns: list, episode_lengths: list, model):
         os.makedirs(os.path.join(p["save_path"], "models"), exist_ok=True)
         model_path = os.path.join(p["save_path"], f"models/{p['seed']}")
         pickle.dump(model, open(model_path, "wb"))
-
-        os.makedirs(os.path.join(p["save_path"], "episode_returns_and_lengths"), exist_ok=True)
-        episode_returns_and_lengths_path = os.path.join(p["save_path"], f"episode_returns_and_lengths/{p['seed']}.json")
+        episode_returns_and_lengths_name = "train_episode_returns_and_lengths"
     else:
-        os.makedirs(os.path.join(p["save_path"], "eval_episode_returns_and_lengths"), exist_ok=True)
-        episode_returns_and_lengths_path = os.path.join(
-            p["save_path"], f"eval_episode_returns_and_lengths/{p['seed']}.json"
-        )
+        episode_returns_and_lengths_name = "eval_episode_returns_and_lengths"
+
+    os.makedirs(os.path.join(p["save_path"], episode_returns_and_lengths_name), exist_ok=True)
+    episode_returns_and_lengths_path = os.path.join(
+        p["save_path"], f"{episode_returns_and_lengths_name}/{p['seed']}.json"
+    )
     json.dump(
         {"episode_lengths": episode_lengths, "episode_returns": episode_returns},
         open(episode_returns_and_lengths_path, "w"),
