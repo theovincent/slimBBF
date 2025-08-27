@@ -23,7 +23,7 @@ def train(key: jax.Array, p: dict, agent: BBF, env, env_eval, rb: SubsequenceRep
 
         episode_returns[-1] += reward
         episode_lengths[-1] += 1
-        if has_reset or n_sampling_steps == p["n_sampling_steps"]:
+        if has_reset:
             print(
                 f"\n{n_sampling_steps} sampling steps: Return {episode_returns[-1]} after {episode_lengths[-1]} steps.\n",
                 flush=True,
