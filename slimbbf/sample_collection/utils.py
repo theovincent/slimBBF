@@ -16,9 +16,8 @@ def select_action(best_action_fn, params, state, key, n_actions, epsilon_fn, n_s
 
 
 def collect_single_sample(key, env, agent, rb: ReplayBuffer, p, epsilon_schedule, n_sampling_steps: int):
-    action_key, noop_key = jax.random.split(key)
     action = select_action(
-        agent.best_action, agent.target_params, env.state, action_key, env.n_actions, epsilon_schedule, n_sampling_steps
+        agent.best_action, agent.target_params, env.state, key, env.n_actions, epsilon_schedule, n_sampling_steps
     ).item()
 
     obs = env.observation
@@ -28,6 +27,7 @@ def collect_single_sample(key, env, agent, rb: ReplayBuffer, p, epsilon_schedule
     rb.add(obs, action, rb.clipping(reward), absorbing, is_truncation)
 
     if absorbing or is_truncation:
+        _, noop_key = jax.random.split(key)
         env.reset_with_noop(noop_key)
 
     return reward, absorbing or is_truncation
