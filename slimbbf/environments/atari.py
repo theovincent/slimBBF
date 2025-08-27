@@ -62,6 +62,7 @@ class AtariEnv:
             _, terminal = self.step(0)
             if terminal:
                 self.reset()
+        self.n_steps = 0
 
     def step(self, action: jnp.int8) -> Tuple[float, bool]:
         reward = 0
