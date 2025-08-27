@@ -5,7 +5,7 @@ import jax
 import numpy as np
 import multiprocessing as mp
 
-from experiments.base.bbf import train, eval
+from experiments.base.bbf import train
 from experiments.base.utils import prepare_logs
 from slimbbf.environments.atari import AtariEnv
 from slimbbf.environments.atari_eval import AtariEval

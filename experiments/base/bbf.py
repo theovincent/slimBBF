@@ -5,7 +5,7 @@ import optax
 from experiments.base.utils import save_data
 from slimbbf.algorithms.bbf import BBF
 from slimbbf.sample_collection.subseq_replay_buffer import SubsequenceReplayBuffer
-from slimbbf.sample_collection.utils import collect_single_sample, select_action
+from slimbbf.sample_collection.utils import collect_single_sample, select_action_eval
 
 
 def train(key: jax.Array, p: dict, agent: BBF, env, env_eval, rb: SubsequenceReplayBuffer):
@@ -73,9 +73,9 @@ def eval(key: jax.Array, p: dict, agent: BBF, env):
     while not episode_termination.all() and env.n_steps < p["horizon"]:
         actions_key, key = jax.random.split(key)
         actions_key = jax.random.split(actions_key, env.n_envs)
-        actions = jax.vmap(select_action, in_axes=(None, None, 0, 0, None, None, None))(
-            agent.best_action, agent.params, env.states, actions_key, env.n_actions, lambda _: 0.001, 1
-        )
+        actions = jax.vmap(select_action_eval, in_axes=(None, None, 0, 0, None, None))(
+            agent.best_action, agent.target_params, env.states, actions_key, env.n_actions, 0.001
+        )  # use target params for eval
         rewards = env.step(np.array(actions))  # episode.termination changes here, so we use episode_termination
         episode_returns += rewards * (1 - episode_termination)
         episode_lengths += (np.ones((env.n_envs,)) * (1 - episode_termination)).astype(np.uint32)
