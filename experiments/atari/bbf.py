@@ -23,8 +23,7 @@ def run(argvs=sys.argv[1:]):
     q_key, train_key = jax.random.split(jax.random.PRNGKey(p["seed"]))
 
     env = AtariEnv(p["experiment_name"].split("_")[-1], sticky_actions=False)  # no sticky actions in Atari 100k
-    # env_eval in lambda to create 100 envs only when needed
-    env_eval = lambda: AtariEval(p["experiment_name"].split("_")[-1], sticky_actions=False, n_envs=100, seed=p["seed"])
+    env_eval = lambda n_envs: AtariEval(p["experiment_name"].split("_")[-1], sticky_actions=False, n_envs=n_envs)
     rb = SubsequenceReplayBuffer(
         max_capacity=p["replay_buffer_capacity"],
         seed=p["seed"],

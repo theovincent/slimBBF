@@ -43,10 +43,12 @@ def train(key: jax.Array, p: dict, agent: BBF, env, env_eval, rb: SubsequenceRep
             for _ in range(p["update_to_data"]):
                 agent.update_online_params(rb)
 
-            # evaluate every 20K steps (includes evaluation at the end)
+            # evaluate every 20K steps
             if n_sampling_steps % 20_000 == 0:
                 key, eval_key = jax.random.split(key)
-                eval_episode_returns, eval_episode_lengths = eval(eval_key, p, agent, env_eval())
+                eval_episode_returns, eval_episode_lengths = evaluate(
+                    eval_key, p, agent, env_eval(n_envs=10 if n_sampling_steps < p["n_sampling_steps"] else 100)
+                )
                 p["wandb"].log(
                     {
                         "n_sampling_steps": n_sampling_steps,
@@ -66,19 +68,25 @@ def train(key: jax.Array, p: dict, agent: BBF, env, env_eval, rb: SubsequenceRep
     save_data(p, eval_returns, eval_lengths, None)
 
 
-def eval(key: jax.Array, p: dict, agent: BBF, env):
+def evaluate(key: jax.Array, p: dict, agent: BBF, env):
+    key, reset_key = jax.random.split(key)
+    env.reset_with_noop(reset_key)
     episode_termination = env.termination_mask  # needed for considering rewards,length until env.termination_mask
-    episode_returns = np.zeros((env.n_envs,), dtype=np.float32)
-    episode_lengths = np.zeros((env.n_envs,), dtype=np.uint32)
+    episode_returns = np.zeros(env.n_envs)
+    episode_lengths = np.zeros(env.n_envs)
+    epsilon_fn = lambda _: 0.001
+
     while not episode_termination.all() and env.n_steps < p["horizon"]:
-        actions_key, key = jax.random.split(key)
-        actions_key = jax.random.split(actions_key, env.n_envs)
-        actions = jax.vmap(select_action_eval, in_axes=(None, None, 0, 0, None, None))(
-            agent.best_action, agent.target_params, env.states, actions_key, env.n_actions, 0.001
-        )  # use target params for eval
-        rewards = env.step(np.array(actions))  # episode.termination changes here, so we use episode_termination
+        key, actions_key = jax.random.split(key)
+
+        actions = select_action_eval(
+            agent.best_action, agent.target_params, env.states, actions_key, env.n_actions, epsilon_fn
+        )
+        rewards = env.step(np.array(actions))
+
+        # episode.termination changes here, so we use episode_termination
         episode_returns += rewards * (1 - episode_termination)
-        episode_lengths += (np.ones((env.n_envs,)) * (1 - episode_termination)).astype(np.uint32)
+        episode_lengths += 1 - episode_termination
         episode_termination = env.termination_mask
 
     return episode_returns.tolist(), episode_lengths.tolist()

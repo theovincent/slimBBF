@@ -3,10 +3,11 @@ import gymnasium as gym
 import numpy as np
 import cv2
 from typing import Tuple
+import jax
 
 
 class AtariEval:
-    def __init__(self, name: str, sticky_actions: bool, n_envs: int, seed: int) -> None:
+    def __init__(self, name: str, sticky_actions: bool, n_envs: int) -> None:
         self.name = name
         self.n_envs = n_envs
         self.state_height, self.state_width = (84, 84)
@@ -35,27 +36,25 @@ class AtariEval:
         )
         self.states_ = np.zeros((n_envs, self.state_height, self.state_width, self.n_stacked_frames), dtype=np.uint8)
         self.n_lives = np.zeros(n_envs, dtype=np.int32)
-        self.rng = np.random.default_rng(seed)
+        self.termination_mask = np.zeros(n_envs, dtype=np.uint8)
 
-        # Apply NOOP reset on all envs sequentially (different NOOP steps)
-        for env_id in range(n_envs):
-            self.reset_with_noop(env_id)
+    def reset_with_noop(self, key):
+        for env_id in range(self.n_envs):
+            key, env_id_key = jax.random.split(key)
+            self.reset_with_noop_id(env_id, env_id_key)
 
         # Create async vectorized env for faster step(), starting from state after NOOP initialization
-        # lambda e=env: e needed for each lambda in loop to capture different env
         self.envs = gym.vector.AsyncVectorEnv([lambda e=env: e for env in self.raw_envs])
 
-        self.termination_mask = np.zeros(n_envs, dtype=np.uint8)  # stores termination flag in each env
-
-    def reset_with_noop(self, env_id):
-        self.reset(env_id)
-        n_noops = self.rng.integers(0, 30, 1)[0]  # max_noops = 30
+    def reset_with_noop_id(self, env_id, key):
+        self.reset_id(env_id)
+        n_noops = jax.random.randint(key, (), 0, 30)  # max_noops = 30
         for _ in range(n_noops):
-            terminal = self.noop_step(env_id)
+            terminal = self.noop_step_id(env_id)
             if terminal:
-                self.reset(env_id)
+                self.reset_id(env_id)
 
-    def reset(self, env_id) -> None:
+    def reset_id(self, env_id) -> None:
         obs_, info_ = self.raw_envs[env_id].reset()
 
         self.n_steps = 0
@@ -66,7 +65,7 @@ class AtariEval:
 
         self.states_[env_id, :, :, -1] = self.resize(self.screen_buffers[env_id, 0])
 
-    def noop_step(self, env_id):
+    def noop_step_id(self, env_id):
         for idx_frame in range(self.n_skipped_frames):
             obs_, _, terminal_, _, info_ = self.raw_envs[env_id].step(0)  # action=0 is NOOP, ignore reward in this step
 
