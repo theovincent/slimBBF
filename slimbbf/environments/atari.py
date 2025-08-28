@@ -71,7 +71,7 @@ class AtariEnv:
             obs_, reward_, terminal_, _, info_ = self.env.step(action)
 
             # terminate on loss life
-            terminal = terminal_ or info_["lives"] < self.n_lives
+            terminal = terminal_ or (info_["lives"] < self.n_lives)
 
             reward += reward_
 

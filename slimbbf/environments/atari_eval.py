@@ -45,6 +45,7 @@ class AtariEval:
 
         # Create async vectorized env for faster step(), starting from state after NOOP initialization
         self.envs = gym.vector.AsyncVectorEnv([lambda e=env: e for env in self.raw_envs])
+        self.n_steps = 0
 
     def reset_with_noop_id(self, env_id, key):
         self.reset_id(env_id)
@@ -57,7 +58,6 @@ class AtariEval:
     def reset_id(self, env_id) -> None:
         obs_, info_ = self.raw_envs[env_id].reset()
 
-        self.n_steps = 0
         self.n_lives[env_id] = info_["lives"]  # to terminate on loss life
 
         self.screen_buffers[env_id, 0] = obs_
@@ -70,7 +70,7 @@ class AtariEval:
             obs_, _, terminal_, _, info_ = self.raw_envs[env_id].step(0)  # action=0 is NOOP, ignore reward in this step
 
             # terminate on loss life
-            terminal = terminal_ or info_["lives"] < self.n_lives[env_id]
+            terminal = terminal_ or (info_["lives"] < self.n_lives[env_id])
 
             if idx_frame >= self.n_skipped_frames - 2:
                 self.screen_buffers[env_id, idx_frame - (self.n_skipped_frames - 2)] = obs_
