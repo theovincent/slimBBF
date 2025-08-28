@@ -2,15 +2,17 @@ import subprocess
 
 
 def test_launch_local():
-    returncode = subprocess.run(["launch_job/atari/local_dqn.sh"]).returncode
+    returncode = subprocess.run(["launch_job/atari/normal/local_bbf.sh"]).returncode
     assert returncode > 0, "The command should have raised an error telling that the experiment name is not specified."
 
-    returncode = subprocess.run(["launch_job/atari/local_dqn.sh", "--experiment_name", "_test_launch_local"]).returncode
+    returncode = subprocess.run(
+        ["launch_job/atari/normal/local_bbf.sh", "--experiment_name", "_test_launch_local"]
+    ).returncode
     assert returncode > 0, "The command should have raised an error telling that the first seed is not specified."
 
     returncode = subprocess.run(
         [
-            "launch_job/atari/local_dqn.sh",
+            "launch_job/atari/normal/local_bbf.sh",
             "--experiment_name",
             "_test_launch_local",
             "--first_seed",
@@ -21,7 +23,7 @@ def test_launch_local():
 
     returncode = subprocess.run(
         [
-            "launch_job/atari/local_dqn.sh",
+            "launch_job/atari/normal/local_bbf.sh",
             "--experiment_name",
             "_test_launch_local",
             "--first_seed",
