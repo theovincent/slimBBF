@@ -96,7 +96,7 @@ class AtariEval:
         for idx_frame in range(self.n_skipped_frames):
             obs_, rewards_, terminals_, _, info_ = self.envs.step(actions)
             rewards += rewards_ * (1 - self.termination_mask)
-            self.termination_mask = self.termination_mask | terminals_ | (info_["lives"] < self.n_lives)
+            self.termination_mask = np.logical_or(self.termination_mask, terminals_, info_["lives"] < self.n_lives)
 
             if idx_frame >= self.n_skipped_frames - 2:
                 self.screen_buffers[:, idx_frame - (self.n_skipped_frames - 2)] = obs_
