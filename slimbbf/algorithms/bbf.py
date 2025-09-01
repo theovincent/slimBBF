@@ -131,7 +131,7 @@ class BBF:
         discounted_gamma: float,
     ):
         # Only works for a single sample
-        target_probs = self.compute_target(params_target, sample, discounted_gamma)
+        target_probs = self.compute_target(params, params_target, sample, discounted_gamma)
         q_logits, spr_predictions = self.network.apply(params, sample.states_stack[0], sample.actions_stack[:-1])
         cross_entropy = importance_weight * optax.softmax_cross_entropy(q_logits, jax.lax.stop_gradient(target_probs))
 
@@ -148,11 +148,14 @@ class BBF:
 
         return cross_entropy + 5 * spr_loss, cross_entropy, spr_loss
 
-    def compute_target(self, params: FrozenDict, sample: SubsequenceReplayElement, discounted_gamma: float):
-        # computes the target value for single sample
+    def compute_target(
+        self, params: FrozenDict, params_target: jax.Array, sample: SubsequenceReplayElement, discounted_gamma: float
+    ):
+        # computes the target value for single sample using Double DQN update
         # shape (n_actions, n_bins)
-        target_probs_actions = jax.nn.softmax(self.network.apply(params, sample.next_state))
-        target_probs = target_probs_actions[jnp.argmax(target_probs_actions @ self.bins)]
+        online_probs_actions = jax.nn.softmax(self.network.apply(params, sample.next_state))
+        target_probs_actions = jax.nn.softmax(self.network.apply(params_target, sample.next_state))
+        target_probs = target_probs_actions[jnp.argmax(online_probs_actions @ self.bins)]
 
         # shape (n_bins)
         target_locations_ = sample.reward + (1 - sample.is_terminal) * discounted_gamma * self.bins

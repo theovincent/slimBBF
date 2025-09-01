@@ -85,7 +85,8 @@ class BBFNet(nn.Module):
         self.transition_model = MultiStepTransitionModel(self.n_actions, self.features[2])
         self.projector = nn.Dense(self.features[3], kernel_init=nn.initializers.xavier_uniform())
         self.predictor = nn.Dense(self.features[3], kernel_init=nn.initializers.xavier_uniform())
-        self.q_logits_head = nn.Dense(self.n_actions * self.n_bins, kernel_init=nn.initializers.xavier_uniform())
+        self.a_logits_head = nn.Dense(self.n_actions * self.n_bins, kernel_init=nn.initializers.xavier_uniform())
+        self.v_logits_head = nn.Dense(self.n_bins, kernel_init=nn.initializers.xavier_uniform())
 
     def spr_rollout(self, latent, actions):
         # Only works for a single state
@@ -106,7 +107,9 @@ class BBFNet(nn.Module):
         spatial_latent = max_min_normalize(self.encoder(state))
         x = self.projector(spatial_latent.reshape(-1))
         x = nn.relu(x)
-        q_logits = self.q_logits_head(x).reshape((self.n_actions, self.n_bins))
+        a_logits = self.a_logits_head(x).reshape((self.n_actions, self.n_bins))
+        v_logits = self.v_logits_head(x).reshape((1, self.n_bins))
+        q_logits = v_logits + (a_logits - jnp.mean(a_logits, axis=-2, keepdims=True))
 
         if actions is None:
             # shape (n_actions, n_bins)

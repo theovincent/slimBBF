@@ -49,7 +49,7 @@ class TestBBF(unittest.TestCase):
         sample = self.generator.sample_subseq_replay_buffer(self.key)
         gamma = jax.random.uniform(self.key)
         update_horizon = jax.random.randint(self.key, (), minval=1, maxval=10)
-        computed_target_probs = self.q.compute_target(self.q.params, sample, gamma**update_horizon)
+        computed_target_probs = self.q.compute_target(self.q.params, self.q.params, sample, gamma**update_horizon)
 
         target_prob_actions = jax.nn.softmax(self.q.network.apply(self.q.params, sample.next_state))
         target_probs = target_prob_actions[jnp.argmax(jax.nn.softmax(target_prob_actions) @ self.q.bins)]
@@ -73,7 +73,7 @@ class TestBBF(unittest.TestCase):
 
         computed_loss = self.q.loss(self.q.params, self.q.params, sample, importance_weight, gamma**update_horizon)
 
-        target_probs = self.q.compute_target(self.q.params, sample, gamma**update_horizon)
+        target_probs = self.q.compute_target(self.q.params, self.q.params, sample, gamma**update_horizon)
         q_probs, spr_predictions = self.q.network.apply(
             self.q.params, sample.states_stack[0], sample.actions_stack[:-1]
         )
