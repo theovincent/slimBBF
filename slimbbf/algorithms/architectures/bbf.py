@@ -109,7 +109,7 @@ class BBFNet(nn.Module):
         x = nn.relu(x)
         a_logits = self.a_logits_head(x).reshape((self.n_actions, self.n_bins))
         v_logits = self.v_logits_head(x).reshape((1, self.n_bins))
-        q_logits = v_logits + (a_logits - jnp.mean(a_logits, axis=-2, keepdims=True))
+        q_logits = v_logits + (a_logits - jnp.mean(a_logits, axis=0, keepdims=True))
 
         if actions is None:
             # shape (n_actions, n_bins)
