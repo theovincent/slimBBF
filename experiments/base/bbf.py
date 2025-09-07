@@ -36,6 +36,7 @@ def train(key: jax.Array, p: dict, agent: BBF, env, env_eval, rb: SubsequenceRep
                     **agent.get_logs(),
                 }
             )
+            save_data(p, episode_returns, episode_lengths, agent.get_model())
             episode_returns.append(0)
             episode_lengths.append(0)
 
@@ -63,8 +64,7 @@ def train(key: jax.Array, p: dict, agent: BBF, env, env_eval, rb: SubsequenceRep
             if n_sampling_steps % p["reset_frequency"] == 0 and n_sampling_steps < p["n_sampling_steps"]:
                 agent.reset_params()
 
-        save_data(p, episode_returns, episode_lengths, agent.get_model())
-
+    save_data(p, episode_returns, episode_lengths, agent.get_model())
     save_data(p, eval_returns, eval_lengths, None)
 
 
