@@ -217,4 +217,4 @@ class BBF:
         return {"train/td_loss": self.cumulated_td_loss, "train/spr_loss": self.cumulated_spr_loss}
 
     def get_model(self):
-        return {"params": self.params}
+        return {"params": self.target_params}
