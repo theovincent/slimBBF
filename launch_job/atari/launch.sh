@@ -4,11 +4,11 @@ SHARED_ARGS="--features 64 128 128 2048 --replay_buffer_capacity 110_000 --batch
     --tau 0.005 --epsilon_end 0.0 --epsilon_duration 2_001 --n_bins 51 \
     --gamma_horizon_decay_steps 10_000 --reset_frequency 20_000"
 
-GAME="BattleZone"
+GAME="Breakout"
 
 PLATFORM="normal/local"  # nhrfau/cluster normal/cluster normal/local
 
-SHARED_NAME="BBF"
+SHARED_NAME="V"
 
 BBF_ARGS="--experiment_name ${SHARED_NAME}_${GAME}"
-launch_job/atari/${PLATFORM}_bbf.sh --first_seed 1 --last_seed 3 $SHARED_ARGS $BBF_ARGS
+launch_job/atari/${PLATFORM}_bbf.sh --first_seed 1 --last_seed 1 --n_parallel_seeds 2 $SHARED_ARGS $BBF_ARGS
