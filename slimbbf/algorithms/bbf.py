@@ -29,6 +29,7 @@ class BBF:
         min_update_horizon: int,
         max_update_horizon: int,
         gamma_horizon_decay_steps: int,
+        update_to_data: int,
         tau: float,
         spr_steps: int,
     ):
@@ -55,14 +56,19 @@ class BBF:
             gamma_horizon_decay_steps, max_update_horizon, min_update_horizon
         )
         self.gamma_schedule = reverse_exponential_scheduler(gamma_horizon_decay_steps, min_gamma, max_gamma)
+        self.update_to_data = update_to_data
         self.tau = tau
         self.grad_steps_after_reset = 0  # to track number of grad steps for schedulers
         self.cumulated_td_loss = 0
         self.cumulated_spr_loss = 0
 
     def update_online_params(self, replay_buffer: SubsequenceReplayBuffer):
-        update_horizon = int(np.round(self.update_horizon_schedule(self.grad_steps_after_reset)))
-        gamma = self.gamma_schedule(self.grad_steps_after_reset)
+        update_horizon = int(
+            np.round(
+                self.update_horizon_schedule(self.grad_steps_after_reset // self.update_to_data * self.update_to_data)
+            )
+        )
+        gamma = self.gamma_schedule(self.grad_steps_after_reset // self.update_to_data * self.update_to_data)
         samples, indices, importance_weights = replay_buffer.sample(n=update_horizon, gamma=gamma)
         self.key, key = jax.random.split(self.key)
 

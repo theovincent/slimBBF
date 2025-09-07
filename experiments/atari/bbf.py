@@ -46,6 +46,7 @@ def run(argvs=sys.argv[1:]):
         min_update_horizon=p["min_update_horizon"],
         max_update_horizon=p["max_update_horizon"],
         gamma_horizon_decay_steps=p["gamma_horizon_decay_steps"],
+        update_to_data=p["update_to_data"],
         tau=p["tau"],
         spr_steps=5,
     )
