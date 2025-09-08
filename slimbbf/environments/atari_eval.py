@@ -99,9 +99,7 @@ class AtariEval:
             self.game_over_mask = np.logical_or(self.game_over_mask, game_over_)
 
             # zero out state in envs where loss of life occurs
-            self.states_ = np.where(
-                (info_["lives"] < self.n_lives)[:, None, None, None], np.zeros_like(self.states_), self.states_
-            )
+            self.states_[info_["lives"] < self.n_lives] = 0
             self.n_lives = info_["lives"]
 
             if idx_frame >= self.n_skipped_frames - 2:
