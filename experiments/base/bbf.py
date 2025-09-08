@@ -36,7 +36,6 @@ def train(key: jax.Array, p: dict, agent: BBF, env, env_eval, rb: SubsequenceRep
                     **agent.get_logs(),
                 }
             )
-            save_data(p, episode_returns, episode_lengths, agent.get_model())
             episode_returns.append(0)
             episode_lengths.append(0)
 
