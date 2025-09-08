@@ -63,12 +63,10 @@ class BBF:
         self.cumulated_spr_loss = 0
 
     def update_online_params(self, replay_buffer: SubsequenceReplayBuffer):
-        update_horizon = int(
-            np.round(
-                self.update_horizon_schedule(self.grad_steps_after_reset // self.update_to_data * self.update_to_data)
-            )
-        )
-        gamma = self.gamma_schedule(self.grad_steps_after_reset // self.update_to_data * self.update_to_data)
+        # Compute effective grad step to use same n and gamma for update_to_data updates
+        effective_grad_step_after_reset = self.grad_steps_after_reset // self.update_to_data * self.update_to_data
+        update_horizon = int(np.round(self.update_horizon_schedule(effective_grad_step_after_reset)))
+        gamma = self.gamma_schedule(effective_grad_step_after_reset)
         samples, indices, importance_weights = replay_buffer.sample(n=update_horizon, gamma=gamma)
         self.key, key = jax.random.split(self.key)
 
