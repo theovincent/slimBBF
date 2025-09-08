@@ -34,7 +34,7 @@ def collect_single_sample(key, env, agent, rb: ReplayBuffer, p, epsilon_schedule
     is_truncation = env.n_steps >= p["horizon"]
     rb.add(obs, action, rb.clipping(reward), absorbing, is_truncation)  # loss of live also absorbing for RB
 
-    # reset and log only when game over or truncation
+    # On absorbing (life loss), the episode continues. We reset and log only when game over or truncation
     if game_over or is_truncation:
         _, noop_key = jax.random.split(key)
         env.reset_with_noop(noop_key)
