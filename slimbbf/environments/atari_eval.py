@@ -36,7 +36,7 @@ class AtariEval:
         )
         self.states_ = np.zeros((n_envs, self.state_height, self.state_width, self.n_stacked_frames), dtype=np.uint8)
         self.n_lives = np.zeros(n_envs, dtype=np.int32)
-        self.termination_mask = np.zeros(n_envs, dtype=np.uint8)
+        self.game_over_mask = np.zeros(n_envs, dtype=np.uint8)
 
     def reset_with_noop(self, key):
         for env_id in range(self.n_envs):
@@ -94,11 +94,15 @@ class AtariEval:
         rewards = np.zeros(self.n_envs, dtype=np.float32)
 
         for idx_frame in range(self.n_skipped_frames):
-            obs_, rewards_, terminals_, _, info_ = self.envs.step(actions)
-            rewards += rewards_ * (1 - self.termination_mask)
-            self.termination_mask = np.logical_or(
-                np.logical_or(self.termination_mask, terminals_), info_["lives"] < self.n_lives
+            obs_, rewards_, game_over_, _, info_ = self.envs.step(actions)
+            rewards += rewards_ * (1 - self.game_over_mask)
+            self.game_over_mask = np.logical_or(self.game_over_mask, game_over_)
+
+            # zero out state in envs where loss of life occurs
+            self.states_ = np.where(
+                (info_["lives"] < self.n_lives)[:, None, None, None], np.zeros_like(self.states_), self.states_
             )
+            self.n_lives = info_["lives"]
 
             if idx_frame >= self.n_skipped_frames - 2:
                 self.screen_buffers[:, idx_frame - (self.n_skipped_frames - 2)] = obs_

@@ -59,7 +59,7 @@ class AtariEnv:
         self.reset()
         n_noops = jax.random.randint(key, (), 0, 30)  # max_noops = 30
         for _ in range(n_noops):
-            _, terminal = self.step(0)
+            _, terminal, _ = self.step(0)
             if terminal:
                 self.reset()
         self.n_steps = 0
@@ -68,25 +68,27 @@ class AtariEnv:
         reward = 0
 
         for idx_frame in range(self.n_skipped_frames):
-            obs_, reward_, terminal_, _, info_ = self.env.step(action)
+            obs_, reward_, game_over, _, info_ = self.env.step(action)
 
-            # terminate on loss life
-            terminal = terminal_ or (info_["lives"] < self.n_lives)
+            # we terminate in RB on loss of life but end episode on game_over
+            terminal = game_over or (info_["lives"] < self.n_lives)
+            self.n_lives = info_["lives"]
 
             reward += reward_
 
+            if terminal:
+                self.state_.fill(0)
+                break
+
             if idx_frame >= self.n_skipped_frames - 2:
                 self.screen_buffer[idx_frame - (self.n_skipped_frames - 2)] = obs_
-
-            if terminal:
-                break
 
         self.state_ = np.roll(self.state_, -1, axis=-1)
         self.state_[:, :, -1] = self.pool_and_resize()
 
         self.n_steps += 1
 
-        return reward, terminal
+        return reward, terminal, game_over
 
     def pool_and_resize(self) -> np.ndarray:
         np.maximum(self.screen_buffer[0], self.screen_buffer[1], out=self.screen_buffer[0])

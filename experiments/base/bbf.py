@@ -70,7 +70,7 @@ def train(key: jax.Array, p: dict, agent: BBF, env, env_eval, rb: SubsequenceRep
 def evaluate(key: jax.Array, p: dict, agent: BBF, env):
     key, reset_key = jax.random.split(key)
     env.reset_with_noop(reset_key)
-    episode_termination = env.termination_mask  # needed for considering rewards,length until env.termination_mask
+    episode_termination = env.game_over_mask  # needed for considering rewards,length until env.game_over_mask
     episode_returns = np.zeros(env.n_envs)
     episode_lengths = np.zeros(env.n_envs)
     epsilon_fn = lambda _: 0.001
@@ -86,6 +86,6 @@ def evaluate(key: jax.Array, p: dict, agent: BBF, env):
         # episode.termination changes here, so we use episode_termination
         episode_returns += rewards * (1 - episode_termination)
         episode_lengths += 1 - episode_termination
-        episode_termination = env.termination_mask
+        episode_termination = env.game_over_mask
 
     return episode_returns.tolist(), episode_lengths.tolist()
