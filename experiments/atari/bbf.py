@@ -10,7 +10,7 @@ from experiments.base.utils import prepare_logs
 from slimbbf.environments.atari import AtariEnv
 from slimbbf.environments.atari_eval import AtariEval
 from slimbbf.algorithms.bbf import BBF
-from slimbbf.sample_collection.subseq_replay_buffer import SubsequenceReplayBuffer
+from slimbbf.sample_collection.subsequence_replay_buffer import PrioritizedJaxSubsequenceParallelEnvReplayBuffer
 
 
 mp.set_start_method("spawn", force=True)
@@ -24,15 +24,14 @@ def run(argvs=sys.argv[1:]):
 
     env = AtariEnv(p["experiment_name"].split("_")[-1], sticky_actions=False)  # no sticky actions in Atari 100k
     env_eval = lambda n_envs: AtariEval(p["experiment_name"].split("_")[-1], sticky_actions=False, n_envs=n_envs)
-    rb = SubsequenceReplayBuffer(
-        max_capacity=p["replay_buffer_capacity"],
-        seed=p["seed"],
-        batch_size=p["batch_size"],
+    rb = PrioritizedJaxSubsequenceParallelEnvReplayBuffer(
         observation_shape=(env.state_height, env.state_width),
-        observation_dtype=np.uint8,
-        spr_window=5,
         stack_size=4,
-        clipping=lambda x: np.clip(x, -1, 1),
+        update_horizon=p["min_update_horizon"],
+        gamma=p["max_gamma"],
+        subseq_len=6,
+        batch_size=p["batch_size"],
+        observation_dtype=np.uint8,
     )
     agent = BBF(
         q_key,
