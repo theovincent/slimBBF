@@ -41,7 +41,7 @@ class BBF:
         self.params = self.network.init(
             init_key, jnp.zeros(observation_dim, dtype=jnp.float32), jnp.zeros(spr_steps, dtype=int)
         )
-        self.bins = jnp.linspace(start=-10, stop=10, num=n_bins)
+        self.bins = np.linspace(start=-10, stop=10, num=n_bins)
 
         self.optimizer = optax.adamw(
             learning_rate,

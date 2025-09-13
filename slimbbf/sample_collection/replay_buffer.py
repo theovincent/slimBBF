@@ -1,7 +1,6 @@
 # Inspired by dopamine implementation: https://github.com/google/dopamine/blob/master/dopamine/jax/replay_memory/replay_buffer.py
 import jax
 import numpy as np
-import jax.numpy as jnp
 from flax import struct
 
 from slimbbf.sample_collection import sum_tree
@@ -105,10 +104,10 @@ class ReplayBuffer:
             batch_indices.append(index)
             batch.append(sample)
 
-        batch_indices = jnp.array(batch_indices)
+        batch_indices = np.array(batch_indices)
         batch_probabilities = self.sum_tree.get(batch_indices) / self.sum_tree.root
-        batch_importance_weights = 1.0 / jnp.sqrt(batch_probabilities + 1e-10)  # beta = 0.5
-        batch_importance_weights /= jnp.max(batch_importance_weights)
+        batch_importance_weights = 1.0 / np.sqrt(batch_probabilities + 1e-10)  # beta = 0.5
+        batch_importance_weights /= np.max(batch_importance_weights)
 
         return jax.tree_util.tree_map(lambda *xs: np.stack(xs), *batch), batch_indices, batch_importance_weights
 

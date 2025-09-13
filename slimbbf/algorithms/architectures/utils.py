@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 
 def random_crop(key, img, cropped_shape):
@@ -31,7 +32,7 @@ def normalize_and_augment(state, key):
 
 def exponential_scheduler(decay_period, initial_value, final_value):
     return lambda step: (
-        initial_value * jnp.power(final_value / initial_value, (step / decay_period))
+        initial_value * np.power(final_value / initial_value, (step / decay_period))
         if step <= decay_period
         else final_value
     )
