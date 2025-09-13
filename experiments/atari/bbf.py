@@ -27,11 +27,13 @@ def run(argvs=sys.argv[1:]):
     rb = PrioritizedJaxSubsequenceParallelEnvReplayBuffer(
         observation_shape=(env.state_height, env.state_width),
         stack_size=4,
+        replay_capacity=p["replay_buffer_capacity"],
         update_horizon=p["min_update_horizon"],
         gamma=p["max_gamma"],
         subseq_len=6,
         batch_size=p["batch_size"],
         observation_dtype=np.uint8,
+        clipping=lambda x: np.clip(x, -1, 1),
     )
     agent = BBF(
         q_key,

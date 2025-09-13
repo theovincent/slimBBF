@@ -12,7 +12,7 @@ from slimbbf.algorithms.architectures.utils import (
     reverse_exponential_scheduler,
     normalize_and_augment,
 )
-from slimbbf.sample_collection.subseq_replay_buffer import SubsequenceReplayBuffer, SubsequenceReplayElement
+from slimbbf.sample_collection.subsequence_replay_buffer import PrioritizedJaxSubsequenceParallelEnvReplayBuffer
 
 
 class BBF:
@@ -62,28 +62,44 @@ class BBF:
         self.cumulated_td_loss = 0
         self.cumulated_spr_loss = 0
 
-    def update_online_params(self, replay_buffer: SubsequenceReplayBuffer):
+    def update_online_params(self, replay_buffer: PrioritizedJaxSubsequenceParallelEnvReplayBuffer):
         # Compute effective grad step to use same n and gamma for update_to_data updates
-        effective_grad_step_after_reset = self.grad_steps_after_reset // self.update_to_data * self.update_to_data
-        update_horizon = int(np.round(self.update_horizon_schedule(effective_grad_step_after_reset)))
-        gamma = self.gamma_schedule(effective_grad_step_after_reset)
-        samples, indices, importance_weights = replay_buffer.sample(n=update_horizon, gamma=gamma)
-        self.key, key = jax.random.split(self.key)
+        update_horizon = int(np.round(self.update_horizon_schedule(self.grad_steps_after_reset)))
+        gamma = self.gamma_schedule(self.grad_steps_after_reset)
 
-        self.params, self.target_params, self.optimizer_state, per_sample_td_loss, spr_loss = self.learn_on_batch(
-            self.params,
-            self.target_params,
-            self.optimizer_state,
-            samples,
-            importance_weights,
-            gamma**update_horizon,
-            key,
+        self.key, sample_key, train_key = jax.random.split(self.key, 3)
+        samples = replay_buffer.sample_transition_batch(
+            rng=sample_key,
+            batch_size=replay_buffer._batch_size * self.update_to_data,
+            update_horizon=update_horizon,
+            gamma=gamma,
         )
 
-        replay_buffer.update(indices, per_sample_td_loss)
-        self.cumulated_td_loss = (1 - self.tau) * self.cumulated_td_loss + self.tau * per_sample_td_loss.mean()
-        self.cumulated_spr_loss = (1 - self.tau) * self.cumulated_spr_loss + self.tau * spr_loss
-        self.grad_steps_after_reset += 1
+        # POSTPROCESS SAMPLES HERE TO GET IN OUR REPLAYELEMENT FORMAT
+        import pdb
+
+        pdb.set_trace()
+
+        for _ in range(self.update_to_data):
+            probs = samples["sampling_probabilities"]
+            loss_weights = 1.0 / np.sqrt(probs + 1e-10)
+            loss_weights /= np.max(loss_weights)
+            indices = samples["indices"]
+
+            self.params, self.target_params, self.optimizer_state, per_sample_td_loss, spr_loss = self.learn_on_batch(
+                self.params,
+                self.target_params,
+                self.optimizer_state,
+                samples,
+                loss_weights,
+                gamma**update_horizon,
+                train_key,
+            )
+
+            replay_buffer.update(indices, per_sample_td_loss)
+            self.cumulated_td_loss = (1 - self.tau) * self.cumulated_td_loss + self.tau * per_sample_td_loss.mean()
+            self.cumulated_spr_loss = (1 - self.tau) * self.cumulated_spr_loss + self.tau * spr_loss
+        self.grad_steps_after_reset += self.update_to_data
 
     def reset_params(self):
         self.key, key = jax.random.split(self.key)
@@ -127,12 +143,7 @@ class BBF:
         return losses.mean(), (td_losses, spr_losses.mean())
 
     def loss(
-        self,
-        params: FrozenDict,
-        params_target: FrozenDict,
-        sample: SubsequenceReplayElement,
-        importance_weight: float,
-        discounted_gamma: float,
+        self, params: FrozenDict, params_target: FrozenDict, sample, importance_weight: float, discounted_gamma: float
     ):
         # Only works for a single sample
         target_probs = self.compute_target(params, params_target, sample, discounted_gamma)
@@ -152,9 +163,7 @@ class BBF:
 
         return cross_entropy + 5 * spr_loss, cross_entropy, spr_loss
 
-    def compute_target(
-        self, params: FrozenDict, params_target: jax.Array, sample: SubsequenceReplayElement, discounted_gamma: float
-    ):
+    def compute_target(self, params: FrozenDict, params_target: jax.Array, sample, discounted_gamma: float):
         # computes the target value for single sample using Double DQN update
         # shape (n_actions, n_bins)
         online_probs_actions = jax.nn.softmax(self.network.apply(params, sample.next_state))

@@ -706,6 +706,7 @@ class PrioritizedJaxSubsequenceParallelEnvReplayBuffer(JaxSubsequenceParallelEnv
         action_dtype=np.int32,
         reward_shape=(),
         reward_dtype=np.float32,
+        clipping=None,
     ):
         super().__init__(
             observation_shape=observation_shape,
@@ -725,6 +726,7 @@ class PrioritizedJaxSubsequenceParallelEnvReplayBuffer(JaxSubsequenceParallelEnv
             reward_shape=reward_shape,
             reward_dtype=reward_dtype,
         )
+        self.clipping = clipping
 
         self.sum_tree = sum_tree.DeterministicSumTree(int(replay_capacity))
 

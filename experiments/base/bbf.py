@@ -4,11 +4,11 @@ import optax
 
 from experiments.base.utils import save_data
 from slimbbf.algorithms.bbf import BBF
-from slimbbf.sample_collection.subseq_replay_buffer import SubsequenceReplayBuffer
+from slimbbf.sample_collection.subsequence_replay_buffer import PrioritizedJaxSubsequenceParallelEnvReplayBuffer
 from slimbbf.sample_collection.utils import collect_single_sample, select_action_eval
 
 
-def train(key: jax.Array, p: dict, agent: BBF, env, env_eval, rb: SubsequenceReplayBuffer):
+def train(key: jax.Array, p: dict, agent: BBF, env, env_eval, rb: PrioritizedJaxSubsequenceParallelEnvReplayBuffer):
     epsilon_schedule = optax.linear_schedule(1.0, p["epsilon_end"], p["epsilon_duration"], p["n_initial_samples"])
     key, noop_key = jax.random.split(key)
     env.reset_with_noop(noop_key)
