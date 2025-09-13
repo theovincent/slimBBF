@@ -60,7 +60,10 @@ def train(key: jax.Array, p: dict, agent: BBF, env, env_eval, rb: SubsequenceRep
                 eval_lengths.append(eval_episode_lengths)
 
             # avoid resetting on last 2 iterations
-            if n_sampling_steps % p["reset_frequency"] == 0 and n_sampling_steps < p["n_sampling_steps"] - p["reset_frequency"]:
+            if (
+                n_sampling_steps % p["reset_frequency"] == 0
+                and n_sampling_steps < p["n_sampling_steps"] - p["reset_frequency"]
+            ):
                 agent.reset_params()
 
     save_data(p, episode_returns, episode_lengths, agent.get_model())
