@@ -25,6 +25,8 @@ from absl import logging
 import jax
 from jax import numpy as jnp
 import numpy as np
+from flax import struct
+
 
 from slimbbf.sample_collection import deterministic_sum_tree as sum_tree
 
@@ -69,6 +71,15 @@ def invalid_range(cursor, replay_capacity, stack_size, update_horizon):
     """
     assert cursor < replay_capacity
     return np.array([(cursor - update_horizon + i) % replay_capacity for i in range(stack_size + update_horizon)])
+
+
+class SubsequenceReplayElement(struct.PyTreeNode):
+    states_stack: np.ndarray[np.float64]
+    actions_stack: np.ndarray[np.uint]
+    reward: np.float32
+    next_state: np.ndarray[np.float64]
+    is_terminal: bool
+    same_trajectory_mask: np.ndarray[bool]
 
 
 class JaxSubsequenceParallelEnvReplayBuffer(object):
@@ -784,6 +795,7 @@ class PrioritizedJaxSubsequenceParallelEnvReplayBuffer(JaxSubsequenceParallelEnv
                     # is not stratified.
                     self._rng, rng = jax.random.split(self._rng)
                     index = int(self.sum_tree.stratified_sample(1, rng=rng))
+                    print(f"DROPPING FROM A FAILURE AT INDEX {i}", flush=True)
                     t_index, b_index = self.unravel_indices(index)  # pylint: disable=unbalanced-tuple-unpacking
 
                     allowed_attempts -= 1

@@ -12,7 +12,10 @@ from slimbbf.algorithms.architectures.utils import (
     reverse_exponential_scheduler,
     normalize_and_augment,
 )
-from slimbbf.sample_collection.subsequence_replay_buffer import PrioritizedJaxSubsequenceParallelEnvReplayBuffer
+from slimbbf.sample_collection.subsequence_replay_buffer import (
+    PrioritizedJaxSubsequenceParallelEnvReplayBuffer,
+    SubsequenceReplayElement,
+)
 
 
 class BBF:
@@ -67,36 +70,60 @@ class BBF:
         update_horizon = int(np.round(self.update_horizon_schedule(self.grad_steps_after_reset)))
         gamma = self.gamma_schedule(self.grad_steps_after_reset)
 
-        self.key, sample_key, train_key = jax.random.split(self.key, 3)
-        samples = replay_buffer.sample_transition_batch(
-            rng=sample_key,
+        self.key, key = jax.random.split(self.key, 2)
+        samples_from_rb = replay_buffer.sample_transition_batch(
+            rng=key,
             batch_size=replay_buffer._batch_size * self.update_to_data,
             update_horizon=update_horizon,
             gamma=gamma,
         )
 
-        # POSTPROCESS SAMPLES HERE TO GET IN OUR REPLAYELEMENT FORMAT
-        import pdb
+        samples = []
+        for idx_batch in range(self.update_to_data):
+            samples.append(
+                SubsequenceReplayElement(
+                    states_stack=samples_from_rb[0][
+                        idx_batch * replay_buffer._batch_size : (idx_batch + 1) * replay_buffer._batch_size
+                    ],
+                    actions_stack=samples_from_rb[1][
+                        idx_batch * replay_buffer._batch_size : (idx_batch + 1) * replay_buffer._batch_size
+                    ],
+                    reward=samples_from_rb[3][
+                        idx_batch * replay_buffer._batch_size : (idx_batch + 1) * replay_buffer._batch_size, 0
+                    ],
+                    next_state=samples_from_rb[5][
+                        idx_batch * replay_buffer._batch_size : (idx_batch + 1) * replay_buffer._batch_size, 0
+                    ],
+                    is_terminal=samples_from_rb[8][
+                        idx_batch * replay_buffer._batch_size : (idx_batch + 1) * replay_buffer._batch_size, 0
+                    ],
+                    same_trajectory_mask=samples_from_rb[9][
+                        idx_batch * replay_buffer._batch_size : (idx_batch + 1) * replay_buffer._batch_size
+                    ],
+                )
+            )
+        probs = samples_from_rb[11].reshape(-1)
+        loss_weights = 1.0 / np.sqrt(probs + 1e-10)
+        loss_weights /= np.max(loss_weights)
+        indices = samples_from_rb[10].reshape(-1)
 
-        pdb.set_trace()
+        for idx_batch in range(self.update_to_data):
 
-        for _ in range(self.update_to_data):
-            probs = samples["sampling_probabilities"]
-            loss_weights = 1.0 / np.sqrt(probs + 1e-10)
-            loss_weights /= np.max(loss_weights)
-            indices = samples["indices"]
-
+            self.key, key = jax.random.split(self.key)
             self.params, self.target_params, self.optimizer_state, per_sample_td_loss, spr_loss = self.learn_on_batch(
                 self.params,
                 self.target_params,
                 self.optimizer_state,
-                samples,
-                loss_weights,
+                samples[idx_batch],
+                loss_weights[idx_batch * replay_buffer._batch_size : (idx_batch + 1) * replay_buffer._batch_size],
                 gamma**update_horizon,
-                train_key,
+                key,
             )
 
-            replay_buffer.update(indices, per_sample_td_loss)
+            replay_buffer.set_priority(
+                indices[idx_batch * replay_buffer._batch_size : (idx_batch + 1) * replay_buffer._batch_size],
+                np.sqrt(per_sample_td_loss + 1e-10),
+            )
             self.cumulated_td_loss = (1 - self.tau) * self.cumulated_td_loss + self.tau * per_sample_td_loss.mean()
             self.cumulated_spr_loss = (1 - self.tau) * self.cumulated_spr_loss + self.tau * spr_loss
         self.grad_steps_after_reset += self.update_to_data

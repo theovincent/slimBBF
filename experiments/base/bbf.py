@@ -40,8 +40,7 @@ def train(key: jax.Array, p: dict, agent: BBF, env, env_eval, rb: PrioritizedJax
             episode_lengths.append(0)
 
         if n_sampling_steps >= p["n_initial_samples"]:
-            for _ in range(p["update_to_data"]):
-                agent.update_online_params(rb)
+            agent.update_online_params(rb)
 
             # evaluate every 20K steps
             if n_sampling_steps % 20_000 == 0:
