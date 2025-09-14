@@ -795,7 +795,6 @@ class PrioritizedJaxSubsequenceParallelEnvReplayBuffer(JaxSubsequenceParallelEnv
                     # is not stratified.
                     self._rng, rng = jax.random.split(self._rng)
                     index = int(self.sum_tree.stratified_sample(1, rng=rng))
-                    print(f"DROPPING FROM A FAILURE AT INDEX {i}", flush=True)
                     t_index, b_index = self.unravel_indices(index)  # pylint: disable=unbalanced-tuple-unpacking
 
                     allowed_attempts -= 1
