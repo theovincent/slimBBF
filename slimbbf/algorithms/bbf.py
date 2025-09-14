@@ -64,26 +64,29 @@ class BBF:
 
     def update_online_params(self, replay_buffer: SubsequenceReplayBuffer):
         # Compute effective grad step to use same n and gamma for update_to_data updates
-        effective_grad_step_after_reset = self.grad_steps_after_reset // self.update_to_data * self.update_to_data
-        update_horizon = int(np.round(self.update_horizon_schedule(effective_grad_step_after_reset)))
-        gamma = self.gamma_schedule(effective_grad_step_after_reset)
-        samples, indices, importance_weights = replay_buffer.sample(n=update_horizon, gamma=gamma)
-        self.key, key = jax.random.split(self.key)
-
-        self.params, self.target_params, self.optimizer_state, per_sample_td_loss, spr_loss = self.learn_on_batch(
-            self.params,
-            self.target_params,
-            self.optimizer_state,
-            samples,
-            importance_weights,
-            gamma**update_horizon,
-            key,
+        update_horizon = int(np.round(self.update_horizon_schedule(self.grad_steps_after_reset)))
+        gamma = self.gamma_schedule(self.grad_steps_after_reset)
+        samples, indices, importance_weights = replay_buffer.sample(
+            n=update_horizon, gamma=gamma, n_batches=self.update_to_data
         )
 
-        replay_buffer.update(indices, per_sample_td_loss)
-        self.cumulated_td_loss = (1 - self.tau) * self.cumulated_td_loss + self.tau * per_sample_td_loss.mean()
-        self.cumulated_spr_loss = (1 - self.tau) * self.cumulated_spr_loss + self.tau * spr_loss
-        self.grad_steps_after_reset += 1
+        for idx_batch in range(self.update_to_data):
+            self.key, key = jax.random.split(self.key)
+            self.params, self.target_params, self.optimizer_state, per_sample_td_loss, spr_loss = self.learn_on_batch(
+                self.params,
+                self.target_params,
+                self.optimizer_state,
+                samples[idx_batch],
+                importance_weights[idx_batch],
+                gamma**update_horizon,
+                key,
+            )
+            replay_buffer.update(indices[idx_batch], per_sample_td_loss)
+
+            self.cumulated_td_loss = (1 - self.tau) * self.cumulated_td_loss + self.tau * per_sample_td_loss.mean()
+            self.cumulated_spr_loss = (1 - self.tau) * self.cumulated_spr_loss + self.tau * spr_loss
+
+        self.grad_steps_after_reset += self.update_to_data
 
     def reset_params(self):
         self.key, key = jax.random.split(self.key)

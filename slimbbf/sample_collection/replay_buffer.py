@@ -84,32 +84,48 @@ class ReplayBuffer:
 
         self.sum_tree.set(add_index, self.sum_tree.max_recorded_priority)
 
-    def sample(self, n, gamma):
-        batch = []
-        batch_indices = []
+    def sample(self, n, gamma, n_batches):
 
-        initial_indices = self.sum_tree.query(self.rng_key.uniform(0.0, self.sum_tree.root, size=self.batch_size))
-        for index in initial_indices:
-            n_sample_trials = 1
-            sample = self.check_valid_and_get_sample(index, n, gamma)
+        effective_batch_size = n_batches * self.batch_size
+        cdf_segments = np.linspace(0, self.sum_tree.root, effective_batch_size + 1)
+        cdf_targets = cdf_segments[:-1] + self.rng_key.random(effective_batch_size) * (
+            cdf_segments[1:] - cdf_segments[:-1]
+        )
+        initial_indices = self.sum_tree.query(cdf_targets)
 
-            # Check if sample is not None until valid sample or 1000 trial limit
-            while sample is None and n_sample_trials < 1000:
-                index = self.sum_tree.query(self.rng_key.uniform(0.0, self.sum_tree.root, size=1))[0]
-                n_sample_trials += 1
+        batches = []
+        indices = []
+        for idx_batch in range(n_batches):
+            batch = []
+            batch_indices = []
+            for index in initial_indices[idx_batch * self.batch_size : (idx_batch + 1) * self.batch_size]:
+                n_sample_trials = 1
                 sample = self.check_valid_and_get_sample(index, n, gamma)
 
-            assert sample, f"Could not construct a valid batch after {n_sample_trials} trials"
+                # Check if sample is not None until valid sample or 1000 trial limit
+                while sample is None and n_sample_trials < 1000:
+                    index = self.sum_tree.query(self.rng_key.uniform(0.0, self.sum_tree.root, size=1))[0]
+                    n_sample_trials += 1
+                    sample = self.check_valid_and_get_sample(index, n, gamma)
 
-            batch_indices.append(index)
-            batch.append(sample)
+                assert sample, f"Could not construct a valid batch after {n_sample_trials} trials"
 
-        batch_indices = np.array(batch_indices)
-        batch_probabilities = self.sum_tree.get(batch_indices) / self.sum_tree.root
-        batch_importance_weights = 1.0 / np.sqrt(batch_probabilities + 1e-10)  # beta = 0.5
-        batch_importance_weights /= np.max(batch_importance_weights)
+                batch_indices.append(index)
+                batch.append(sample)
 
-        return jax.tree_util.tree_map(lambda *xs: np.stack(xs), *batch), batch_indices, batch_importance_weights
+            batches.append(batch)
+            indices.append(batch_indices)
+
+        indices = np.array(indices)
+        probabilities = self.sum_tree.get(indices.reshape(-1)).reshape((n_batches, self.batch_size))
+        importance_weights = 1.0 / np.sqrt(probabilities + 1e-10)  # beta = 0.5
+        importance_weights /= np.max(importance_weights)
+
+        return (
+            [jax.tree_util.tree_map(lambda *xs: np.stack(xs), *batch) for batch in batches],
+            indices,
+            importance_weights,
+        )
 
     def check_valid_and_get_sample(self, index, n, gamma):
         # Is state valid?

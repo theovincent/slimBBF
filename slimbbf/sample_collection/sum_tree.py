@@ -1,7 +1,5 @@
 # Inspired by dopamine implementation: https://github.com/google/dopamine/blob/master/dopamine/jax/replay_memory/sum_tree.py
 
-from functools import partial
-import jax
 import numpy as np
 
 
@@ -54,28 +52,3 @@ class SumTree:
             targets = np.where(targets < left_node_sums, targets, targets - left_node_sums)
 
         return node_indices - self.first_leaf_offset
-
-    def stratified_sample(self, batch_size, rng):
-
-        @partial(jax.jit, backend="cpu")
-        def step(i, args):
-            query_value, index, nodes = args
-            left_child = index * 2 + 1
-            left_sum = nodes[left_child]
-            index = jax.lax.cond(query_value < left_sum, lambda x: x, lambda x: x + 1, left_child)
-            query_value = jax.lax.cond(query_value < left_sum, lambda x: x, lambda x: x - left_sum, query_value)
-            return query_value, index, nodes
-
-        @partial(jax.jit, backend="cpu")
-        @partial(jax.vmap, in_axes=(None, None, 0, None, None))
-        def parallel_stratified_sample(rng, nodes, i, n, depth):
-            rng = jax.random.fold_in(rng, i)
-            total_priority = nodes[0]
-            upper_bound = (i + 1) / n
-            lower_bound = i / n
-            query = jax.random.uniform(rng, minval=lower_bound, maxval=upper_bound)
-            _, index, _ = jax.lax.fori_loop(0, depth, step, (query * total_priority, 0, nodes))
-            return index
-
-        indices = parallel_stratified_sample(rng, self.nodes, np.arange(batch_size), batch_size, self.depth)
-        return np.minimum(indices - self.low_idx, self.highest_set)
