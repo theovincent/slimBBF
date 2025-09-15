@@ -185,4 +185,4 @@ class ReplayBuffer:
         return ReplayElement(state, action, reward, next_state, is_terminal)
 
     def update(self, indices, loss):
-        self.sum_tree.set(indices, np.pow(loss, 0.5))  # Set alpha = 0 for uniform RB
+        self.sum_tree.set(indices, np.pow(loss + 1e-10, 0.5))  # Set alpha = 0 for uniform RB
