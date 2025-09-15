@@ -17,7 +17,6 @@
 
 import functools
 
-from slimbbf.sample_collection import sum_tree
 import jax
 from jax import numpy as jnp
 import numpy as np
@@ -45,7 +44,7 @@ def parallel_stratified_sample(rng, nodes, i, n, depth):
     return index
 
 
-class DeterministicSumTree(sum_tree.SumTree):
+class DeterministicSumTree:
     """A sum tree data structure for storing replay priorities.
 
     In contrast to the original implementation, this uses JAX for handling
@@ -71,7 +70,6 @@ class DeterministicSumTree(sum_tree.SumTree):
         self.nodes = []
         self.depth = int(np.ceil(np.log2(capacity)))
         self.low_idx = (2**self.depth) - 1  # pri_idx + low_idx -> tree_idx
-        self.high_idx = capacity + self.low_idx
         self.nodes = np.zeros(2 ** (self.depth + 1) - 1)  # Double precision.
         self.capacity = capacity
 

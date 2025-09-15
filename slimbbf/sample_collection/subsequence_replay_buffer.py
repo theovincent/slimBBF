@@ -463,60 +463,6 @@ class JaxSubsequenceParallelEnvReplayBuffer(object):
         else:
             return self.cursor() * self._n_envs
 
-    def sample_index_batch(self, batch_size):
-        """Returns a batch of valid indices sampled uniformly.
-
-        Args:
-          batch_size: int, number of indices returned.
-
-        Returns:
-          list of ints, a batch of valid indices sampled uniformly.
-
-        Raises:
-          RuntimeError: If the batch was not constructed after maximum number
-          of tries.
-        """
-        self._rng, rng = jax.random.split(self._rng)
-        if self.is_full():
-            # add_count >= self._replay_capacity > self._stack_size
-            min_id = self.cursor() - self._replay_length + self._stack_size - 1
-            max_id = self.cursor() - self._update_horizon - self._subseq_len
-        else:
-            # add_count < self._replay_capacity
-            min_id = self._stack_size - 1
-            max_id = self.cursor() - self._update_horizon - self._subseq_len
-            if max_id <= min_id:
-                raise RuntimeError(
-                    "Cannot sample a batch with fewer than stack size "
-                    "({}) + update_horizon ({}) transitions.".format(self._stack_size, self._update_horizon)
-                )
-        t_indices = jax.random.randint(rng, (batch_size,), min_id, max_id) % self._replay_length
-        b_indices = jax.random.randint(rng, (batch_size,), 0, self._n_envs)
-        allowed_attempts = self._max_sample_attempts
-        t_indices = np.array(t_indices)
-        censor_before = np.zeros_like(t_indices)
-        for i in range(len(t_indices)):
-            is_valid, ep_start = self.is_valid_transition(t_indices[i : i + 1], b_indices[i : i + 1])
-            censor_before[i] = ep_start
-            if not is_valid:
-                if allowed_attempts == 0:
-                    raise RuntimeError(
-                        "Max sample attempts: Tried {} times but only sampled {}"
-                        " valid indices. Batch size is {}".format(self._max_sample_attempts, i, batch_size)
-                    )
-                while not is_valid and allowed_attempts > 0:
-                    # If index i is not valid keep sampling others. Note that this
-                    # is not stratified.
-                    self._rng, rng = jax.random.split(self._rng)
-                    t_index = jax.random.randint(rng, (1,), min_id, max_id) % self._replay_length
-                    b_index = jax.random.randint(rng, (1,), 0, self._n_envs)
-                    allowed_attempts -= 1
-                    t_indices[i] = t_index
-                    b_indices[i] = b_index
-                    is_valid, first_valid = self.is_valid_transition(t_indices[i : i + 1], b_indices[i : i + 1])
-                    censor_before[i] = first_valid
-        return t_indices, b_indices, censor_before
-
     def restore_leading_dims(self, batch_size, subseq_len, tensor):
         return tensor.reshape(batch_size, subseq_len, *tensor.shape[1:])
 
