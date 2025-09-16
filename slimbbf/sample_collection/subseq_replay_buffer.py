@@ -29,7 +29,7 @@ class SubsequenceReplayBuffer(ReplayBuffer):
         super().__init__(max_capacity, seed, batch_size, observation_shape, observation_dtype, stack_size, clipping)
         self.spr_window = spr_window
 
-    def construct_batch_sample(self, index, first_terminal_index, n, gamma):
+    def construct_batch_sample(self, index, first_terminal_index, is_terminal_for_sample, n, gamma):
         # if first_terminal_index == None, the sample is a regular sample
         # if first_terminal_index != None, the sample is terminal and the reward should be accumulated until first_terminal_index.
         state_stack_index_range = mod_index_range(
@@ -49,7 +49,7 @@ class SubsequenceReplayBuffer(ReplayBuffer):
 
         # Get frames of next state of shape (stack_size, H, W) from observation_stack and change to (H, W, stack_size)
         # if is_terminal, then the next state will be ignored so it is irrelevant
-        next_state_index_range = mod_index_range(index + n - self.stack_size + 1, index + n, self.max_capacity)
+        next_state_index_range = mod_index_range(index + n - self.stack_size, index + n - 1, self.max_capacity)
         next_state = np.moveaxis(self.observation_stack[next_state_index_range], 0, -1)
 
         # Constructs mask for SPR loss with True for all indices in same trajectory as state
@@ -62,5 +62,5 @@ class SubsequenceReplayBuffer(ReplayBuffer):
         states_in_trajectory = np.concatenate(([True], next_states_in_trajectory[:-1]))
 
         return SubsequenceReplayElement(
-            states_stack, actions_stack, reward, next_state, is_terminal, states_in_trajectory
+            states_stack, actions_stack, reward, next_state, is_terminal_for_sample, states_in_trajectory
         )

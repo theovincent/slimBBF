@@ -137,12 +137,16 @@ class ReplayBuffer:
 
         # Is next state valid?
         indices_upto_next_state = mod_index_range(index, index + n - 1, self.max_capacity)
+        indices_for_is_terminal = mod_index_range(index, index + n - 2, self.max_capacity)
         # Find the first index in indices_upto_next_state where terminal/truncation is true
         # if does not exists set it to None
         terminal_indices_true = np.where(self.is_terminal_stack[indices_upto_next_state])[0]
+        terminal_indices_one_less_n = np.where(self.is_terminal_stack[indices_for_is_terminal])[0]
+
         first_terminal_index = (
             indices_upto_next_state[terminal_indices_true[0]] if len(terminal_indices_true) > 0 else None
         )
+        is_terminal_for_sample = len(terminal_indices_one_less_n) > 0
 
         truncation_indices_true = np.where(self.is_truncation_stack[indices_upto_next_state])[0]
         first_truncation_index = (
@@ -158,11 +162,11 @@ class ReplayBuffer:
         )
 
         if not is_state_invalid and is_next_state_valid:
-            return self.construct_batch_sample(index, first_terminal_index, n, gamma)
+            return self.construct_batch_sample(index, first_terminal_index, is_terminal_for_sample, n, gamma)
         else:
             return None
 
-    def construct_batch_sample(self, index, first_terminal_index, n, gamma):
+    def construct_batch_sample(self, index, first_terminal_index, is_terminal_for_sample, n, gamma):
         # if first_terminal_index == None, the sample is a regular sample
         # if first_terminal_index != None, the sample is terminal and the reward should be accumulated until first_terminal_index.
         # Get frames of state of shape (stack_size, H, W) from observation_stack and change to (H, W, stack_size)
@@ -179,10 +183,10 @@ class ReplayBuffer:
 
         # Get frames of next state of shape (stack_size, H, W) from observation_stack and change to (H, W, stack_size)
         # if is_terminal, then the next state will be ignored so it is irrelevant
-        next_state_index_range = mod_index_range(index + n - self.stack_size + 1, index + n, self.max_capacity)
+        next_state_index_range = mod_index_range(index + n - self.stack_size, index + n - 1, self.max_capacity)
         next_state = np.moveaxis(self.observation_stack[next_state_index_range], 0, -1)
 
-        return ReplayElement(state, action, reward, next_state, is_terminal)
+        return ReplayElement(state, action, reward, next_state, is_terminal_for_sample)
 
     def update(self, indices, loss):
         self.sum_tree.set(indices, np.pow(loss + 1e-10, 0.5))  # Set alpha = 0 for uniform RB
