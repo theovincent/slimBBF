@@ -29,7 +29,7 @@ class SubsequenceReplayBuffer(ReplayBuffer):
         super().__init__(max_capacity, seed, batch_size, observation_shape, observation_dtype, stack_size, clipping)
         self.spr_window = spr_window
 
-    def construct_batch_sample(self, index, first_terminal_index, is_terminal_for_sample, n, gamma):
+    def construct_batch_sample(self, index, first_terminal_index, is_terminal_for_sample, n, gamma, batch_zero_mask):
         # if first_terminal_index == None, the sample is a regular sample
         # if first_terminal_index != None, the sample is terminal and the reward should be accumulated until first_terminal_index.
         state_stack_index_range = mod_index_range(
@@ -53,13 +53,13 @@ class SubsequenceReplayBuffer(ReplayBuffer):
         next_state = np.moveaxis(self.observation_stack[next_state_index_range], 0, -1)
 
         # Constructs mask for SPR loss with True for all indices in same trajectory as state
-        spr_obs_indices = mod_index_range(index, index + self.spr_window, self.max_capacity)
-        trajectory_end_flags = np.logical_or(
-            self.is_terminal_stack[spr_obs_indices], self.is_truncation_stack[spr_obs_indices]
-        )
-        next_states_in_trajectory = (1 - trajectory_end_flags).cumprod()
-        # Sets mask to True for terminal/truncating state if trajectory ends
-        states_in_trajectory = np.concatenate(([True], next_states_in_trajectory[:-1]))
+        if batch_zero_mask:
+            states_in_trajectory = np.ones(self.spr_window + 1)
+        else:
+            spr_obs_indices = mod_index_range(index, index + self.spr_window, self.max_capacity)
+            trajectory_end_flags = self.is_terminal_stack[spr_obs_indices]
+
+            states_in_trajectory = (1 - trajectory_end_flags).cumprod()
 
         return SubsequenceReplayElement(
             states_stack, actions_stack, reward, next_state, is_terminal_for_sample, states_in_trajectory

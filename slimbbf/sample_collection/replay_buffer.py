@@ -98,15 +98,15 @@ class ReplayBuffer:
         for idx_batch in range(n_batches):
             batch = []
             batch_indices = []
-            for index in initial_indices[idx_batch * self.batch_size : (idx_batch + 1) * self.batch_size]:
+            for i, index in enumerate(initial_indices[idx_batch * self.batch_size : (idx_batch + 1) * self.batch_size]):
                 n_sample_trials = 1
-                sample = self.check_valid_and_get_sample(index, n, gamma)
+                sample = self.check_valid_and_get_sample(index, n, gamma, batch_zero_mask=idx_batch == 0 and i == 0)
 
                 # Check if sample is not None until valid sample or 1000 trial limit
                 while sample is None and n_sample_trials < 1000:
                     index = self.sum_tree.query(self.rng_key.uniform(0.0, self.sum_tree.root, size=1))[0]
                     n_sample_trials += 1
-                    sample = self.check_valid_and_get_sample(index, n, gamma)
+                    sample = self.check_valid_and_get_sample(index, n, gamma, batch_zero_mask=idx_batch == 0 and i == 0)
 
                 assert sample, f"Could not construct a valid batch after {n_sample_trials} trials"
 
@@ -127,7 +127,7 @@ class ReplayBuffer:
             importance_weights,
         )
 
-    def check_valid_and_get_sample(self, index, n, gamma):
+    def check_valid_and_get_sample(self, index, n, gamma, **kwargs):
         # Is state valid?
         state_stack_indices_except_last = mod_index_range(index - self.stack_size + 1, index - 1, self.max_capacity)
         is_state_invalid = self.stack_size > 1 and (
@@ -162,11 +162,11 @@ class ReplayBuffer:
         )
 
         if not is_state_invalid and is_next_state_valid:
-            return self.construct_batch_sample(index, first_terminal_index, is_terminal_for_sample, n, gamma)
+            return self.construct_batch_sample(index, first_terminal_index, is_terminal_for_sample, n, gamma, **kwargs)
         else:
             return None
 
-    def construct_batch_sample(self, index, first_terminal_index, is_terminal_for_sample, n, gamma):
+    def construct_batch_sample(self, index, first_terminal_index, is_terminal_for_sample, n, gamma, **kwargs):
         # if first_terminal_index == None, the sample is a regular sample
         # if first_terminal_index != None, the sample is terminal and the reward should be accumulated until first_terminal_index.
         # Get frames of state of shape (stack_size, H, W) from observation_stack and change to (H, W, stack_size)
