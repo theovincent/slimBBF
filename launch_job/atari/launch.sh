@@ -6,9 +6,7 @@ SHARED_ARGS="--features 64 128 128 2048 --replay_buffer_capacity 110_000 --batch
 
 GAME="Breakout"
 
-PLATFORM="normal/local"  # nhrfau/cluster normal/cluster normal/local
+PLATFORM="normal/local" # normal/cluster normal/local
 
-SHARED_NAME="V"
-
-BBF_ARGS="--experiment_name ${SHARED_NAME}_${GAME}"
-launch_job/atari/${PLATFORM}_bbf.sh --first_seed 1 --last_seed 1 --n_parallel_seeds 2 $SHARED_ARGS $BBF_ARGS
+BBF_ARGS="--experiment_name test_${GAME}"
+launch_job/atari/${PLATFORM}_bbf.sh --first_seed 1 --last_seed 1 --n_parallel_seeds 1 $SHARED_ARGS $BBF_ARGS --disable_wandb
