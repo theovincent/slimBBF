@@ -38,6 +38,7 @@ class TestBBF(unittest.TestCase):
             min_update_horizon=3,
             max_update_horizon=10,
             gamma_horizon_decay_steps=10,
+            update_to_data=1,
             tau=0.005,
             spr_steps=5,
         )

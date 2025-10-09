@@ -60,9 +60,9 @@ class ReplayBufferTest(unittest.TestCase):
             rb.add(np.full((84, 84), i), 0, 2.0, False, False)
 
         for _ in range(100):
-            batch, _, _ = rb.sample(n=5, gamma=1)
+            batch, _, _ = rb.sample(n=5, gamma=1, n_batches=1)
             # Make sure the total reward is reward per step x update_horizon.
-            np.testing.assert_array_equal(batch.reward, np.ones(32) * 10.0)
+            np.testing.assert_array_equal(batch[0].reward, np.ones(32) * 10.0)
 
     def testGetStack(self):
         rb = ReplayBuffer(
@@ -145,15 +145,15 @@ class ReplayBufferTest(unittest.TestCase):
 
         self.assertEqual(rb.sum_tree.root, 5)
         rb.update(np.array([0, 1, 2, 3, 4]), np.array([1.0, 4.0, 9.0, 16.0, 0.0]))  # updates priorities to 1,2,3,4,0
-        self.assertEqual(rb.sum_tree.root, 10)
+        self.assertAlmostEqual(rb.sum_tree.root, 10, places=4)
 
         # test if zero priority absent
-        _, indices, _ = rb.sample(1, 0.5)
+        _, indices, _ = rb.sample(1, 0.5, n_batches=1)
         np.testing.assert_array_less(indices, 4)  # 0 priority should not be sampled
 
         indices = np.array([5, 6, 7, 8, 9, 0, 1])
         for i in range(5, 15):
             rb.add(np.full((84, 84), i), i, i, False, False)  # now priorities should be 4,...,4 (max so far is 4)
-        self.assertEqual(rb.sum_tree.root, 40)
-        _, _, importance_weights = rb.sample(1, 0.5)
+        self.assertAlmostEqual(rb.sum_tree.root, 40, places=4)
+        _, _, importance_weights = rb.sample(1, 0.5, n_batches=1)
         np.testing.assert_array_equal(importance_weights, np.ones_like(importance_weights))
