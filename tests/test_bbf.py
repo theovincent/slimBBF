@@ -101,7 +101,3 @@ class TestBBF(unittest.TestCase):
         q_probs = jax.nn.softmax(self.q.network.apply(self.q.params, state / 255.0))
         best_action = jnp.argmax(q_probs @ self.q.bins)
         self.assertEqual(best_action, computed_best_action)
-
-
-if __name__ == "__main__":
-    unittest.main()
