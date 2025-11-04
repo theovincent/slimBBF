@@ -3,7 +3,7 @@ import jax
 import numpy as np
 from flax import struct
 
-from slimbbf.sample_collection import sum_tree
+from slimbbf.sample_collection.sum_tree import SumTree
 
 
 def mod_index_range(i: int, j: int, N: int):
@@ -45,7 +45,7 @@ class ReplayBuffer:
         self.stack_size = stack_size
         self.clipping = clipping
 
-        self.sum_tree = sum_tree.SumTree(max_capacity)
+        self.sum_tree = SumTree(max_capacity)
 
         # Fill initial zero frames
         self.is_terminal_stack[: stack_size - 1] = 0
@@ -65,7 +65,7 @@ class ReplayBuffer:
 
         # Update the truncation flag for the previous frame if trajectory did not truncate
         # If the trajectory ended, self.add_count - 1 will not correspond to the accurate index,
-        # it will correspond to a black observation, which is not a truncated state so _is_truncation = False
+        # it will correspond to a black observation, which is not a truncated state so is_truncation = False
         if not self.last_obs_is_truncation:
             self.is_truncation_stack[(self.add_count - 1) % self.max_capacity] = False
         self.last_obs_is_truncation = is_truncation
@@ -86,6 +86,8 @@ class ReplayBuffer:
 
     def sample(self, n, gamma, n_batches):
 
+        # For stratified prioritized sampling, we split [0, self.sum_tree.root] in
+        # number of batches we need and sample one batch from each segment.
         effective_batch_size = n_batches * self.batch_size
         cdf_segments = np.linspace(0, self.sum_tree.root, effective_batch_size + 1)
         cdf_targets = cdf_segments[:-1] + self.rng_key.random(effective_batch_size) * (
