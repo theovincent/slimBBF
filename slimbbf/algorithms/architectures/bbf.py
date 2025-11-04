@@ -85,6 +85,8 @@ class BBFNet(nn.Module):
         self.transition_model = MultiStepTransitionModel(self.n_actions, self.features[2])
         self.projector = nn.Dense(self.features[3], kernel_init=nn.initializers.xavier_uniform())
         self.predictor = nn.Dense(self.features[3], kernel_init=nn.initializers.xavier_uniform())
+
+        # Dueling DQN network components
         self.a_logits_head = nn.Dense(self.n_actions * self.n_bins, kernel_init=nn.initializers.xavier_uniform())
         self.v_logits_head = nn.Dense(self.n_bins, kernel_init=nn.initializers.xavier_uniform())
 

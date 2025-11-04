@@ -70,7 +70,7 @@ class AtariEnv:
         for idx_frame in range(self.n_skipped_frames):
             obs_, reward_, game_over, _, info_ = self.env.step(action)
 
-            # we terminate in RB on loss of life but end episode on game_over
+            # we terminate the episode in replay buffer on loss of life but end the episode on game_over
             terminal = game_over or (info_["lives"] < self.n_lives)
             self.n_lives = info_["lives"]
 
