@@ -63,7 +63,6 @@ class BBF:
         self.cumulated_spr_loss = 0
 
     def update_online_params(self, replay_buffer: SubsequenceReplayBuffer):
-        # Compute effective grad step to use same n and gamma for update_to_data updates
         update_horizon = int(np.round(self.update_horizon_schedule(self.grad_steps_after_reset)))
         gamma = self.gamma_schedule(self.grad_steps_after_reset)
         samples, indices, importance_weights = replay_buffer.sample(
@@ -153,7 +152,7 @@ class BBF:
         # mask out the state that are not from same trajectory
         spr_loss = importance_weight * (spr_losses * sample.same_trajectory_mask[1:]).mean()
 
-        return cross_entropy + 5 * spr_loss, cross_entropy, spr_loss
+        return cross_entropy + 5 * spr_loss, cross_entropy, spr_loss  # for spr weight of 5 in overall loss
 
     def compute_target(
         self, params: FrozenDict, params_target: jax.Array, sample: SubsequenceReplayElement, discounted_gamma: float

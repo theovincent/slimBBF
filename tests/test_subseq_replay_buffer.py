@@ -38,7 +38,7 @@ class SubsequenceReplayBufferTest(unittest.TestCase):
         rb.add(np.full((84, 84), 1), 1, 1, False, False)
         rb.add(np.full((84, 84), 2), 2, 2, False, False)
         rb.add(np.full((84, 84), 3), 3, 3, False, False)
-        # After adding RB is [0 0 0 1 2 3#]
+        # After adding RB is [0 0 0 1 2 3#] (# = truncation)
 
         # ensure that the returned state at index 3 and 4 is correct
         np.testing.assert_array_equal(
@@ -71,17 +71,16 @@ class SubsequenceReplayBufferTest(unittest.TestCase):
             stack_size=1,  # testing with stack size 1
             clipping=None,
         )
-        num_adds = 50  # The number of transitions to add to the memory.
 
         # After adding 50 transitions, RB would contain transitions [40* 41 42 43 44* 45 46 47 48* 49#] (* = terminal, # = truncation)
-        for i in range(num_adds):
+        for i in range(50):
             terminal = i % 4 == 0  # Every 4 transitions is terminal.
             rb.add(np.full((84, 84), i), i, i, terminal, False)
 
         # index 9 is invalid as we cannot create next_state
         self.assertEqual(rb.check_valid_and_get_sample(9, 1, 1.0), None)
 
-        # check valid sample at index 2 (s=[42,...,47], a=[42,...,47], r=42 + 0.5*43, s'=44, d=False, mask=[1,1,1,0,0,0]) (for n=2)
+        # check valid non-terminating sample at index 2 (s=[42,...,47], a=[42,...,47], r=42 + 0.5*43, s'=44, d=False, mask=[1,1,1,0,0,0]) (for n=2)
         sample = rb.check_valid_and_get_sample(2, 2, 0.5)  # n=2, gamma=0.5
         np.testing.assert_array_equal(make_states_stack([42, 43, 44, 45, 46, 47], 1), sample.states_stack)
         np.testing.assert_array_equal([42, 43, 44, 45, 46, 47], sample.actions_stack)
@@ -90,7 +89,7 @@ class SubsequenceReplayBufferTest(unittest.TestCase):
         np.testing.assert_array_equal(make_state([44]), sample.next_state)
         np.testing.assert_array_equal([1, 1, 1, 0, 0, 0], sample.same_trajectory_mask)
 
-        # check valid sample at index 8 (s=[48,49,40,...,43], a=[48,49,40,...,43], r=48, d=True, mask=[1,0,0..]) (s' doesn't matter here)
+        # check valid terminating sample at index 8 (s=[48,49,40,...,43], a=[48,49,40,...,43], r=48, d=True, mask=[1,0,0..]) (s' doesn't matter here)
         sample = rb.check_valid_and_get_sample(8, 1, 1.0)  # gamma=1.0
         np.testing.assert_array_equal(make_states_stack([48, 49, 40, 41, 42, 43], 1), sample.states_stack)
         np.testing.assert_array_equal([48, 49, 40, 41, 42, 43], sample.actions_stack)
